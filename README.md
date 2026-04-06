@@ -23,7 +23,7 @@ Supports WiFi client mode, 5GHz AP mode, and real-time frequency display — no 
 | Board | Orange Pi Zero 2W (Allwinner H618) |
 | OS | Orange Pi OS 1.0.2 (Bookworm) |
 | SDR Dongle | RTL-SDR (any RTL2832U-based) via USB |
-| Display | SSD1306 128×32 OLED — I2C bus 3, address `0x3C` |
+| Display | SSD1306 128×32 OLED — I2C bus 2, address `0x3C` |
 | Buttons | 4× tactile push buttons (active LOW, internal pull-up) |
 
 ### Button Wiring
@@ -54,7 +54,7 @@ Supports WiFi client mode, 5GHz AP mode, and real-time frequency display — no 
 
 ```bash
 sudo orangepi-config
-# System → Hardware → enable i2c3 → Save → Back
+# System → Hardware → enable i2c1 → Save → Back
 ```
 
 ### Step 2 — Clone and run install script
@@ -198,7 +198,7 @@ journalctl -u button_rtl -f
 
 ## Notes
 
-- Verify OLED detected: `i2cdetect -y 3` — should show `0x3C`
+- Verify OLED detected: `i2cdetect -y 2` — should show `0x3C`
 - `usb_claim_interface error -6` means another rtl_tcp is running — handled automatically by the script
 - AP uses `country_code=IL` (Israel) — change in `hostapd_5g.conf` if needed
 - SSH: `ssh orangepi@<ip>` (key auth recommended: `~/.ssh/orangepi_key`)

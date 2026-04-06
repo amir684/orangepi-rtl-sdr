@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ── Hardware ──────────────────────────────────────────────
 ADDR = 0x3C
-BUS  = 3
+BUS  = 2
 BTN_UP   = "PI1"
 BTN_DOWN = "PI3"
 BTN_SEL  = "PI4"
