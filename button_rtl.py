@@ -9,11 +9,11 @@ from PIL import Image, ImageDraw, ImageFont
 # ── Hardware ──────────────────────────────────────────────
 ADDR = 0x3C
 BUS  = 2
-BTN_UP    = "PH0"
-BTN_DOWN  = "PH1"
-BTN_BACK  = "PH2"
-BTN_RIGHT = "PH3"
-BTN_SEL   = "PH4"
+BTN_UP    = "PI1"
+BTN_DOWN  = "PI3"
+BTN_BACK  = "PI0"
+BTN_RIGHT = "PI2"
+BTN_SEL   = "PI4"
 
 AP_SSID = "OrangePi-SDR"
 AP_PASS = "12345678"
