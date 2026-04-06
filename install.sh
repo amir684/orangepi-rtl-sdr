@@ -4,8 +4,8 @@ set -e
 echo "=== OrangePi RTL-SDR Server — Install Script ==="
 
 # ── 1. System update ──────────────────────────────────────
-echo "[1/6] Updating system..."
-sudo apt update -y && sudo apt upgrade -y
+echo "[1/6] Updating package lists..."
+sudo apt update -y
 
 # ── 2. Install packages ───────────────────────────────────
 echo "[2/6] Installing packages..."
