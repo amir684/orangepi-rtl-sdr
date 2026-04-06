@@ -9,10 +9,11 @@ from PIL import Image, ImageDraw, ImageFont
 # ── Hardware ──────────────────────────────────────────────
 ADDR = 0x3C
 BUS  = 2
-BTN_UP   = "PI1"
-BTN_DOWN = "PI3"
-BTN_SEL  = "PI4"
-BTN_BACK = "PI0"
+BTN_UP    = "PH0"
+BTN_DOWN  = "PH1"
+BTN_BACK  = "PH2"
+BTN_RIGHT = "PH3"
+BTN_SEL   = "PH4"
 
 AP_SSID = "OrangePi-SDR"
 AP_PASS = "12345678"
@@ -192,7 +193,7 @@ def is_long_press(pin, threshold=1.0):
 # ── GPIO setup ────────────────────────────────────────────
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.SUNXI)
-for pin in [BTN_UP, BTN_DOWN, BTN_SEL, BTN_BACK]:
+for pin in [BTN_UP, BTN_DOWN, BTN_SEL, BTN_BACK, BTN_RIGHT]:
     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 bus = SMBus(BUS)
@@ -209,6 +210,18 @@ def refresh_idle():
     show(bus, line1, line2, temp_right=True)
 
 refresh_idle()
+
+# ── Auto-start RTL-TCP on boot ────────────────────────────
+subprocess.call(["pkill", "-f", "rtl_tcp"])
+time.sleep(0.3)
+rtl_active = True
+rtl_process = subprocess.Popen(
+    ["stdbuf", "-oL", "rtl_tcp", "-a", "0.0.0.0", "-p", "1234"],
+    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+threading.Thread(target=read_rtl, args=(rtl_process, bus), daemon=True).start()
+refresh_idle()
+
+
 print("Ready.")
 
 last_up_press = 0
@@ -240,6 +253,30 @@ while True:
                         time.sleep(0.3)
                         show(bus, current_ip(), "RTL: OFF", temp_right=True)
                     wait_release(BTN_UP)
+
+        elif GPIO.input(BTN_RIGHT) == GPIO.LOW:
+            now = time.time()
+            if now - last_up_press > 0.5:
+                last_up_press = now
+                time.sleep(0.05)
+                if GPIO.input(BTN_RIGHT) == GPIO.LOW:
+                    if rtl_process is None or rtl_process.poll() is not None:
+                        subprocess.call(["pkill","-f","rtl_tcp"])
+                        time.sleep(0.3)
+                        rtl_active = True
+                        rtl_process = subprocess.Popen(
+                            ["stdbuf","-oL","rtl_tcp","-a","0.0.0.0","-p","1234"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                        threading.Thread(target=read_rtl,
+                                         args=(rtl_process, bus), daemon=True).start()
+                        show(bus, current_ip(), "RTL: ON", temp_right=True)
+                    else:
+                        rtl_active = False
+                        subprocess.call(["pkill","-f","rtl_tcp"])
+                        rtl_process = None
+                        time.sleep(0.3)
+                        show(bus, current_ip(), "RTL: OFF", temp_right=True)
+                    wait_release(BTN_RIGHT)
 
         if GPIO.input(BTN_SEL) == GPIO.LOW:
             if is_long_press(BTN_SEL, 1.0):
