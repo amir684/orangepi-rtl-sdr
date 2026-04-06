@@ -1,6 +1,18 @@
 # OrangePi Zero 2W — RTL-SDR Server with OLED UI
 
-A fully standalone RTL-SDR server running on an **Orange Pi Zero 2W**, controlled via 4 physical buttons and a 128×32 OLED display. Supports WiFi client mode, 5GHz AP mode, and real-time frequency display.
+A fully standalone RTL-SDR server running on an **Orange Pi Zero 2W**, controlled via 4 physical buttons and a 128×32 OLED display.  
+Supports WiFi client mode, 5GHz AP mode, and real-time frequency display — no screen or keyboard required after setup.
+
+---
+
+## Features
+
+- **RTL-TCP server** — start/stop `rtl_tcp` with a button press, real-time frequency display as clients tune
+- **128×32 OLED UI** — shows IP address, RTL status, current frequency, CPU temperature
+- **4-button menu system** — navigate with Up/Down, select with SEL, back with BACK
+- **WiFi management** — connect to last saved network or scan and join new networks with on-screen password entry
+- **5GHz AP mode** — turns the Pi into an open hotspot (`OrangePi-SDR`) using hostapd + dnsmasq
+- **Systemd service** — auto-starts on boot, restarts automatically on crash
 
 ---
 
@@ -16,14 +28,14 @@ A fully standalone RTL-SDR server running on an **Orange Pi Zero 2W**, controlle
 
 ### Button Wiring
 
-| GPIO Pin | Constant | Function |
-|----------|----------|----------|
+| GPIO Pin | Role | Function |
+|----------|------|----------|
 | PI0 | BTN_BACK | Back / Cancel |
-| PI1 | BTN_UP | Scroll up / Increase RTL gain |
+| PI1 | BTN_UP | Scroll up / Toggle RTL |
 | PI3 | BTN_DOWN | Scroll down |
 | PI4 | BTN_SEL | Short press: Select — Long press (1s): Open menu |
 
-All buttons wired: one side to **GND**, other side to the GPIO pin (internal pull-up enabled).
+> All buttons: one side to **GND**, other side to the GPIO pin (internal pull-up enabled).
 
 ### OLED Wiring (I2C)
 
@@ -36,88 +48,62 @@ All buttons wired: one side to **GND**, other side to the GPIO pin (internal pul
 
 ---
 
-## Features
+## Quick Install (Fresh SD Card)
 
-- **RTL-TCP server** — start/stop `rtl_tcp` via button, real-time frequency display as clients tune in
-- **128×32 OLED UI** — shows IP address, RTL status, current frequency, CPU temperature
-- **4-button menu system** — navigate with Up/Down, select with SEL, back with BACK
-- **WiFi management** — connect to last saved network or scan and join new networks with on-screen password entry
-- **5GHz AP mode** — turns the Pi into an open hotspot (`OrangePi-SDR`) using hostapd + dnsmasq, DHCP on `192.168.100.x`
-- **Auto temperature refresh** — CPU temp updated every 10 seconds on idle screen
-- **Systemd service** — auto-starts on boot, restarts on crash
+### Step 1 — Enable I2C bus 3
+
+```bash
+sudo orangepi-config
+# System → Hardware → enable i2c3 → Save → Back
+```
+
+### Step 2 — Clone and run install script
+
+```bash
+git clone https://github.com/amir684/orangepi-rtl-sdr.git
+cd orangepi-rtl-sdr
+bash install.sh
+```
+
+### Step 3 — Reboot
+
+```bash
+sudo reboot
+```
+
+That's it. The OLED will light up and the service starts automatically on every boot.
 
 ---
 
-## Software Dependencies
+## What `install.sh` Does
 
-```bash
-sudo apt install rtl-sdr python3-pip hostapd dnsmasq
-pip3 install OPi.GPIO smbus2 Pillow
-```
+1. Updates the system (`apt update && upgrade`)
+2. Installs system packages: `rtl-sdr`, `hostapd`, `dnsmasq`, `python3-pip`
+3. Installs Python libraries: `OPi.GPIO`, `smbus2`, `Pillow`
+4. Copies scripts to `/usr/local/bin/`
+5. Copies `hostapd_5g.conf` to `/etc/hostapd/`
+6. Installs and enables the `button_rtl` systemd service
 
 ---
 
 ## File Structure
 
 ```
+Repository:
+├── button_rtl.py        Main controller script
+├── start_ap.sh          Start hostapd + dnsmasq AP
+├── stop_ap.sh           Stop AP and reconnect to WiFi
+├── hostapd_5g.conf      5GHz open AP configuration
+├── button_rtl.service   Systemd unit for auto-start
+└── install.sh           One-shot install script
+
+Installed on device:
 /usr/local/bin/
-├── button_rtl.py       # Main controller script
-├── start_ap.sh         # Start hostapd + dnsmasq AP
-└── stop_ap.sh          # Stop AP and reconnect to WiFi
-
-/etc/systemd/system/
-└── button_rtl.service  # Systemd unit for auto-start
-
-/etc/hostapd/
-└── hostapd_5g.conf     # 5GHz open AP configuration
-```
-
----
-
-## Installation
-
-### 1. Copy scripts
-
-```bash
-sudo cp button_rtl.py /usr/local/bin/
-sudo cp start_ap.sh stop_ap.sh /usr/local/bin/
-sudo chmod +x /usr/local/bin/start_ap.sh /usr/local/bin/stop_ap.sh
-```
-
-### 2. Create hostapd config
-
-```bash
-sudo nano /etc/hostapd/hostapd_5g.conf
-```
-
-```ini
-interface=wlan0
-driver=nl80211
-ssid=OrangePi-SDR
-hw_mode=a
-channel=36
-ieee80211n=1
-ieee80211ac=1
-wmm_enabled=1
-country_code=IL
-ignore_broadcast_ssid=0
-auth_algs=1
-wpa=0
-```
-
-### 3. Install and enable systemd service
-
-```bash
-sudo cp button_rtl.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable button_rtl
-sudo systemctl start button_rtl
-```
-
-### 4. Check status
-
-```bash
-sudo systemctl status button_rtl
+├── button_rtl.py
+├── start_ap.sh
+└── stop_ap.sh
+/etc/hostapd/hostapd_5g.conf
+/etc/systemd/system/button_rtl.service
 ```
 
 ---
@@ -127,14 +113,18 @@ sudo systemctl status button_rtl
 ### Idle Screen
 
 ```
-192.168.1.XXX        32.5C
+192.168.1.XXX          32.5C
 RTL: OFF
 ```
 
-- **BTN_UP** (short press): Toggle rtl_tcp ON/OFF
-- **BTN_SEL** (long press 1s): Open menu
+| Button | Action |
+|--------|--------|
+| BTN_UP (short) | Toggle rtl_tcp ON / OFF |
+| BTN_SEL (hold 1s) | Open menu |
 
-### Menu
+---
+
+### Menu Navigation
 
 ```
 > AP Mode
@@ -142,42 +132,73 @@ RTL: OFF
   < Back
 ```
 
-Navigate with UP/DOWN, confirm with SEL, cancel with BACK.
-
-### AP Mode
-
-When AP is active, idle screen shows:
-```
-192.168.100.1        34.1C
-AP:ON RTL: ON
-```
-
-Connect to WiFi `OrangePi-SDR` (no password) and use `192.168.100.1:1234` as RTL-TCP server.
-
-To stop AP: open menu → **Stop AP**.
-
-### WiFi Password Entry
-
-On-screen character picker — UP/DOWN to cycle characters, SEL to confirm each character, BACK to delete, long-press SEL to submit password.
+| Button | Action |
+|--------|--------|
+| BTN_UP / BTN_DOWN | Scroll items |
+| BTN_SEL | Confirm selection |
+| BTN_BACK | Go back / cancel |
 
 ---
 
-## RTL-TCP
+### AP Mode
 
-Default port: **1234**
-
-Connect from SDR software (SDR#, GQRX, etc.):
+Starts a 5GHz open hotspot. Idle screen changes to:
 
 ```
-Host: <Pi IP>
-Port: 1234
+192.168.100.1          34.1C
+AP:ON  RTL: ON
+```
+
+- SSID: `OrangePi-SDR` (no password)
+- DHCP range: `192.168.100.10 – 192.168.100.50`
+- RTL-TCP: `192.168.100.1:1234`
+
+To stop: open menu → **Stop AP** (returns to WiFi client mode).
+
+---
+
+### WiFi Password Entry
+
+On-screen character picker:
+
+| Button | Action |
+|--------|--------|
+| BTN_UP / BTN_DOWN | Cycle through characters |
+| BTN_SEL (short) | Confirm character |
+| BTN_BACK | Delete last character |
+| BTN_SEL (hold 1s) | Submit password |
+
+---
+
+## Connecting SDR Software
+
+| Setting | Value |
+|---------|-------|
+| Host | Pi IP (shown on OLED) |
+| Port | `1234` |
+
+Works with SDR#, GQRX, SDR++, and any rtl_tcp-compatible client.
+
+---
+
+## Service Management
+
+```bash
+# Check status
+sudo systemctl status button_rtl
+
+# Restart
+sudo systemctl restart button_rtl
+
+# View logs
+journalctl -u button_rtl -f
 ```
 
 ---
 
 ## Notes
 
-- I2C discovery: run `i2cdetect -y 3` to confirm OLED at `0x3C`
-- If `rtl_tcp` fails with `usb_claim_interface error -6`, another instance is running — the script handles this automatically with pkill before each start
-- AP uses country code `IL` (Israel) — change `country_code` in `hostapd_5g.conf` if needed
-- SSH access: `ssh orangepi@<ip>` (key auth recommended)
+- Verify OLED detected: `i2cdetect -y 3` — should show `0x3C`
+- `usb_claim_interface error -6` means another rtl_tcp is running — handled automatically by the script
+- AP uses `country_code=IL` (Israel) — change in `hostapd_5g.conf` if needed
+- SSH: `ssh orangepi@<ip>` (key auth recommended: `~/.ssh/orangepi_key`)
