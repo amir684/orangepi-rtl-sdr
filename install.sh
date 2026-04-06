@@ -13,7 +13,7 @@ sudo apt install -y rtl-sdr hostapd dnsmasq python3-pip
 
 # ── 3. Install Python libraries ───────────────────────────
 echo "[3/6] Installing Python libraries..."
-pip3 install OPi.GPIO smbus2 Pillow
+pip3 install --break-system-packages OPi.GPIO smbus2 Pillow
 
 # ── 4. Copy scripts ───────────────────────────────────────
 echo "[4/6] Copying scripts..."
