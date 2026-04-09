@@ -174,7 +174,8 @@ def get_sdr_menu():
     add("RTL-TCP", "rtltcp")
     if shutil.which("readsb"):
         add("ADS-B", "adsb")
-    if os.path.exists("/home/orangepi/radiosonde_auto_rx/auto_rx/auto_rx.py"):
+    if os.path.exists("/home/orangepi/radiosonde_auto_rx/auto_rx/auto_rx.py") \
+            or os.path.exists("/lib/systemd/system/auto-rx.service"):
         add("AutoRX", "autorx")
     if shutil.which("rtl_433"):
         add("RTL-433", "rtl433")
@@ -225,6 +226,18 @@ def get_adsb_count():
         return f"AC:{count}"
     except:
         return "AC:?"
+
+def get_autorx_status():
+    try:
+        r = subprocess.run(
+            ["curl", "-s", "--max-time", "1",
+             "http://localhost:5000/get_telemetry"],
+            capture_output=True, text=True)
+        data = json.loads(r.stdout)
+        count = len(data) if isinstance(data, list) else len(data.keys())
+        return f"Sonde:{count}" if count else "Scanning..."
+    except:
+        return "Scanning..."
 
 def get_last_wifi():
     r = subprocess.run(["nmcli","-t","-f","NAME,TYPE","con","show"],
@@ -325,7 +338,7 @@ def refresh_idle():
     elif current_sdr_mode == "adsb":
         line2 = pfx + "ADS-B ON";  line2_right = get_adsb_count()
     elif current_sdr_mode == "autorx":
-        line2 = pfx + "AutoRX ON"; line2_right = ""
+        line2 = pfx + "AutoRX ON"; line2_right = get_autorx_status()
     elif current_sdr_mode == "rtl433":
         line2 = pfx + "RTL-433 ON"; line2_right = ""
     elif current_sdr_mode == "ais":
