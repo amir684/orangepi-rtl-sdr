@@ -56,8 +56,8 @@ def _save_brightness(level):
 
 oled_brightness = _load_brightness()
 
-MENU_ITEMS_IDLE = ["AP Mode", "WiFi Mode", "Brightness", "< Back"]
-MENU_ITEMS_AP   = ["Stop AP", "WiFi Mode", "Brightness", "< Back"]
+MENU_ITEMS_IDLE = ["AP Mode", "WiFi Mode", "Brightness", "Power Off", "< Back"]
+MENU_ITEMS_AP   = ["Stop AP", "WiFi Mode", "Brightness", "Power Off", "< Back"]
 MENU_ITEMS = MENU_ITEMS_IDLE
 WIFI_ITEMS  = ["Last Network", "Scan Networks", "< Back"]
 
@@ -389,6 +389,10 @@ while True:
             elif choice == "Brightness":
                 state = "brightness"
                 _show_brightness()
+            elif choice == "Power Off":
+                show(bus, "Shutting down...", "")
+                time.sleep(2)
+                subprocess.call(["sudo", "poweroff"])
             elif choice == "< Back":
                 state = "idle"
                 refresh_idle()
