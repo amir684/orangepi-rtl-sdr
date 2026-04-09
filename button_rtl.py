@@ -52,6 +52,13 @@ cfg_edit_editable = []
 cfg_call_chars    = []
 cfg_call_char_idx = 0
 
+# Scroll / idle-display state
+current_freq    = ""          # last frequency seen from rtl_tcp
+_scroll_offset  = 0
+_scroll_state   = "pause_start"   # pause_start | scrolling | pause_end
+_scroll_pause   = 30
+_status_cache   = {"val": "", "mode": "", "ts": 0.0}
+
 AUTORX_CFG_ITEMS = ["Latitude", "Longitude", "Altitude", "Callsign", "< Back"]
 CALL_CHARS = (list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/") +
               ["<DEL>", "<OK>"])
@@ -415,19 +422,16 @@ def format_freq(hz):
     return f"{hz}Hz"
 
 def read_rtl(proc, bus_ref):
-    global rtl_active
+    global rtl_active, current_freq
     for line in proc.stdout:
         if not rtl_active:
             break
         line = line.decode(errors='ignore').strip()
         if "set freq" in line:
             try:
-                hz = int(line.split()[-1])
-                if rtl_active and state == "idle":
-                    r2 = "" if ap_running else get_rssi()
-                    show(bus_ref, current_ip(), format_freq(hz),
-                         temp_right=True, line2_right=r2)
-            except: pass
+                current_freq = format_freq(int(line.split()[-1]))
+            except:
+                pass
 
 # ── Button helpers ────────────────────────────────────────
 def wait_release(pin):
@@ -453,30 +457,138 @@ bus = SMBus(BUS)
 init_display(bus)
 set_contrast(bus, oled_brightness)
 
-def refresh_idle():
-    line1 = "192.168.100.1" if ap_running else get_ip()
-    pfx   = "AP " if ap_running else ""
+def _make_scroll_text():
+    """Build the address string for line 1 (IP + port/path)."""
+    ip = current_ip()
     if current_sdr_mode == "rtltcp":
-        rtl_on    = rtl_process is not None and rtl_process.poll() is None
-        line2     = pfx + ("RTL:ON" if rtl_on else "RTL:OFF")
-        line2_right = "" if ap_running else get_rssi()
-    elif current_sdr_mode == "adsb":
-        line2 = pfx + "ADS-B ON";  line2_right = get_adsb_count()
+        return f"{ip}:1234"
     elif current_sdr_mode == "autorx":
-        line2 = pfx + "AutoRX ON"; line2_right = get_autorx_status()
-    elif current_sdr_mode == "rtl433":
-        line2 = pfx + "RTL-433 ON"; line2_right = ""
-    elif current_sdr_mode == "ais":
-        line2 = pfx + "AIS ON";    line2_right = ""
+        return f"{ip}:5000"
+    elif current_sdr_mode == "adsb":
+        return f"{ip}/tar1090"
     else:
-        line2 = pfx + "SDR: OFF";  line2_right = ""
-    show(bus, line1, line2, temp_right=True, line2_right=line2_right)
+        return ip
+
+def _get_line2_status():
+    """Return right-side annotation for line 2, cached 5s."""
+    now = time.time()
+    if now - _status_cache["ts"] > 5 or _status_cache["mode"] != current_sdr_mode:
+        if current_sdr_mode == "rtltcp":
+            _status_cache["val"] = "" if ap_running else get_rssi()
+        elif current_sdr_mode == "adsb":
+            _status_cache["val"] = get_adsb_count()
+        elif current_sdr_mode == "autorx":
+            _status_cache["val"] = get_autorx_status()
+        else:
+            _status_cache["val"] = ""
+        _status_cache["mode"] = current_sdr_mode
+        _status_cache["ts"]   = now
+    return _status_cache["val"]
+
+def _draw_idle_frame(bus_ref, scroll_px=0):
+    """Draw one idle screen frame with scroll_px offset on line 1."""
+    with display_lock:
+        img = Image.new('1', (128, 32), 0)
+        d   = ImageDraw.Draw(img)
+
+        # ── Line 1: scrolling address ──────────────────────
+        addr = _make_scroll_text()
+        d.text((-scroll_px, 1), addr, font=font, fill=1)
+
+        # Temp fixed on the right — black backdrop clears scroll text behind it
+        temp = get_cpu_temp()
+        tw   = int(d.textlength(temp, font=font))
+        d.rectangle([128 - tw - 2, 0, 127, 15], fill=0)
+        d.text((128 - tw, 1), temp, font=font, fill=1)
+
+        # ── Line 2: mode status ────────────────────────────
+        pfx = "AP " if ap_running else ""
+        if current_sdr_mode == "rtltcp":
+            rtl_on = rtl_process is not None and rtl_process.poll() is None
+            if rtl_on and current_freq:
+                line2 = pfx + current_freq
+            else:
+                line2 = pfx + ("RTL:ON" if rtl_on else "RTL:OFF")
+        elif current_sdr_mode == "adsb":
+            line2 = pfx + "ADS-B ON"
+        elif current_sdr_mode == "autorx":
+            line2 = pfx + "AutoRX ON"
+        elif current_sdr_mode == "rtl433":
+            line2 = pfx + "RTL-433 ON"
+        elif current_sdr_mode == "ais":
+            line2 = pfx + "AIS ON"
+        else:
+            line2 = pfx + "SDR: OFF"
+
+        r2 = _get_line2_status()
+        d.text((0, 17), line2, font=font, fill=1)
+        if r2:
+            rw = int(d.textlength(r2, font=font))
+            d.text((127 - rw, 17), r2, font=font, fill=1)
+
+        display_image(bus_ref, img)
+
+def refresh_idle():
+    """Reset scroll to start and draw immediately."""
+    global _scroll_offset, _scroll_state, _scroll_pause
+    _scroll_offset = 0
+    _scroll_state  = "pause_start"
+    _scroll_pause  = 30
+    _draw_idle_frame(bus, 0)
+
+def _idle_scroll_thread(bus_ref):
+    """Continuously update idle screen with marquee scroll on line 1."""
+    global _scroll_offset, _scroll_state, _scroll_pause
+    PAUSE = 30  # frames at each end (~2.4s at 12fps)
+
+    while True:
+        if state != "idle":
+            time.sleep(0.2)
+            _scroll_offset = 0
+            _scroll_state  = "pause_start"
+            _scroll_pause  = PAUSE
+            continue
+
+        # Measure how far to scroll
+        addr   = _make_scroll_text()
+        dummy  = Image.new('1', (1, 1), 0)
+        dd     = ImageDraw.Draw(dummy)
+        full_w = int(dd.textlength(addr, font=font))
+        avail  = 90          # pixels before temp
+        max_off = max(0, full_w - avail)
+
+        _draw_idle_frame(bus_ref, _scroll_offset)
+
+        if max_off == 0:
+            time.sleep(0.5)   # no scroll needed — just keep refreshing temp
+            continue
+
+        # State machine
+        if _scroll_state == "pause_start":
+            _scroll_pause -= 1
+            if _scroll_pause <= 0:
+                _scroll_state = "scrolling"
+        elif _scroll_state == "scrolling":
+            _scroll_offset += 1
+            if _scroll_offset >= max_off:
+                _scroll_offset = max_off
+                _scroll_state  = "pause_end"
+                _scroll_pause  = PAUSE
+        elif _scroll_state == "pause_end":
+            _scroll_pause -= 1
+            if _scroll_pause <= 0:
+                _scroll_offset = 0
+                _scroll_state  = "pause_start"
+                _scroll_pause  = PAUSE
+
+        time.sleep(0.08)
 
 refresh_idle()
 
 # ── Auto-start RTL-TCP on boot ────────────────────────────
 start_sdr("rtltcp")
 refresh_idle()
+threading.Thread(target=_idle_scroll_thread, args=(bus,), daemon=True).start()
 
 
 def _show_brightness():
@@ -486,7 +598,6 @@ def _show_brightness():
 print("Ready.")
 
 last_up_press = 0
-last_temp_refresh = 0
 
 while True:
     # ── IDLE ──────────────────────────────────────────────
@@ -937,11 +1048,5 @@ while True:
                     password += c
                     _pwd_display()
                 wait_release(BTN_SEL)
-
-    if state == "idle":
-        now = time.time()
-        if now - last_temp_refresh > 10:
-            last_temp_refresh = now
-            refresh_idle()
 
     time.sleep(0.05)
