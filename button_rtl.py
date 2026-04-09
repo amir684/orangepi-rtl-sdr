@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 import socket
 import time
 import subprocess
@@ -215,6 +216,16 @@ def start_sdr(mode):
         subprocess.call(["systemctl", "start", "rtl-ais"])
     # "off" → stop only (already done above)
 
+def get_adsb_count():
+    try:
+        with open("/run/readsb/aircraft.json") as f:
+            data = json.load(f)
+        count = sum(1 for a in data.get("aircraft", [])
+                    if a.get("seen", 999) < 60)
+        return f"AC:{count}"
+    except:
+        return "AC:?"
+
 def get_last_wifi():
     r = subprocess.run(["nmcli","-t","-f","NAME,TYPE","con","show"],
                        capture_output=True, text=True)
@@ -312,7 +323,7 @@ def refresh_idle():
         line2     = pfx + ("RTL:ON" if rtl_on else "RTL:OFF")
         line2_right = "" if ap_running else get_rssi()
     elif current_sdr_mode == "adsb":
-        line2 = pfx + "ADS-B ON";  line2_right = ""
+        line2 = pfx + "ADS-B ON";  line2_right = get_adsb_count()
     elif current_sdr_mode == "autorx":
         line2 = pfx + "AutoRX ON"; line2_right = ""
     elif current_sdr_mode == "rtl433":
