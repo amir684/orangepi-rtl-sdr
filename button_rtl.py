@@ -36,8 +36,11 @@ rtl_active  = False          # flag to stop display thread after kill
 ap_running  = False          # flag for AP mode active
 display_lock = threading.Lock()
 
-MENU_ITEMS_IDLE = ["AP Mode", "WiFi Mode", "< Back"]
-MENU_ITEMS_AP   = ["Stop AP", "WiFi Mode", "< Back"]
+oled_brightness = 2          # 0=dim … 4=max
+BRIGHTNESS_LEVELS = [0x10, 0x40, 0x8F, 0xCF, 0xFF]
+
+MENU_ITEMS_IDLE = ["AP Mode", "WiFi Mode", "Brightness", "< Back"]
+MENU_ITEMS_AP   = ["Stop AP", "WiFi Mode", "Brightness", "< Back"]
 MENU_ITEMS = MENU_ITEMS_IDLE
 WIFI_ITEMS  = ["Last Network", "Scan Networks", "< Back"]
 
@@ -53,6 +56,9 @@ def init_display(bus):
               0x8D,0x14,0x20,0x00,0xA1,0xC8,0xDA,0x02,
               0x81,0xCF,0xD9,0xF1,0xDB,0x40,0xA4,0xA6,0xAF]:
         cmd(bus, c)
+
+def set_contrast(bus, level):
+    cmd(bus, 0x81, BRIGHTNESS_LEVELS[level])
 
 def display_image(bus, image):
     img = image.convert('1')
@@ -222,6 +228,10 @@ threading.Thread(target=read_rtl, args=(rtl_process, bus), daemon=True).start()
 refresh_idle()
 
 
+def _show_brightness():
+    bar = "█" * (oled_brightness + 1) + "░" * (4 - oled_brightness)
+    show(bus, "Brightness", f"{bar}  {oled_brightness+1}/5")
+
 print("Ready.")
 
 last_up_press = 0
@@ -331,6 +341,9 @@ while True:
                 state = "wifi_menu"
                 menu_idx = 0
                 show_menu(bus, "-- WiFi --", WIFI_ITEMS, menu_idx)
+            elif choice == "Brightness":
+                state = "brightness"
+                _show_brightness()
             elif choice == "< Back":
                 state = "idle"
                 refresh_idle()
@@ -389,6 +402,32 @@ while True:
                 state = "menu"
                 menu_idx = 0
                 show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
+
+    # ── BRIGHTNESS ────────────────────────────────────────
+    elif state == "brightness":
+        if GPIO.input(BTN_UP) == GPIO.LOW:
+            time.sleep(0.05)
+            if oled_brightness < 4:
+                oled_brightness += 1
+                set_contrast(bus, oled_brightness)
+            _show_brightness()
+            wait_release(BTN_UP)
+
+        elif GPIO.input(BTN_DOWN) == GPIO.LOW:
+            time.sleep(0.05)
+            if oled_brightness > 0:
+                oled_brightness -= 1
+                set_contrast(bus, oled_brightness)
+            _show_brightness()
+            wait_release(BTN_DOWN)
+
+        elif GPIO.input(BTN_SEL) == GPIO.LOW or GPIO.input(BTN_BACK) == GPIO.LOW:
+            time.sleep(0.05)
+            pin = BTN_SEL if GPIO.input(BTN_SEL) == GPIO.LOW else BTN_BACK
+            state = "menu"
+            menu_idx = 0
+            show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
+            wait_release(pin)
 
     # ── WIFI LIST ─────────────────────────────────────────
     elif state == "wifi_list":
