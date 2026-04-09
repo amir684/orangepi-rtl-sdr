@@ -79,7 +79,7 @@ EOF
     # Disable autostart — button_rtl.py manages start/stop
     sudo systemctl disable readsb tar1090 2>/dev/null || true
     sudo systemctl stop readsb tar1090 2>/dev/null || true
-    echo "[4] ADS-B installed. Web UI will be at http://IP:8080"
+    echo "[4] ADS-B installed. Web UI will be at http://IP/tar1090"
 else
     echo "[4] Skipping ADS-B."
 fi
