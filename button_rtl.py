@@ -423,23 +423,23 @@ while True:
 
     # ── BRIGHTNESS ────────────────────────────────────────
     elif state == "brightness":
-        if GPIO.input(BTN_RIGHT) == GPIO.LOW:
+        if GPIO.input(BTN_UP) == GPIO.LOW:
             time.sleep(0.05)
             if oled_brightness < 4:
                 oled_brightness += 1
                 set_contrast(bus, oled_brightness)
                 _save_brightness(oled_brightness)
             _show_brightness()
-            wait_release(BTN_RIGHT)
+            wait_release(BTN_UP)
 
-        elif GPIO.input(BTN_BACK) == GPIO.LOW:
+        elif GPIO.input(BTN_DOWN) == GPIO.LOW:
             time.sleep(0.05)
             if oled_brightness > 0:
                 oled_brightness -= 1
                 set_contrast(bus, oled_brightness)
                 _save_brightness(oled_brightness)
             _show_brightness()
-            wait_release(BTN_BACK)
+            wait_release(BTN_DOWN)
 
         elif GPIO.input(BTN_SEL) == GPIO.LOW:
             time.sleep(0.05)
