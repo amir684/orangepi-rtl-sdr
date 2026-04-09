@@ -129,6 +129,7 @@ RTL: OFF
 ```
 > AP Mode
   WiFi Mode
+  Brightness
   < Back
 ```
 
@@ -137,6 +138,27 @@ RTL: OFF
 | BTN_UP / BTN_DOWN | Scroll items |
 | BTN_SEL | Confirm selection |
 | BTN_BACK | Go back / cancel |
+
+---
+
+### Brightness Control
+
+Accessible from the main menu → **Brightness**.
+
+```
+Brightness
+███░░  3/5
+```
+
+| Button | Action |
+|--------|--------|
+| RIGHT | Increase brightness |
+| LEFT | Decrease brightness |
+| CENTER | Back to menu |
+
+- 5 levels (1 = very dim, 5 = max)
+- Default: level 3
+- Setting is saved to `/etc/button_rtl_brightness` and restored on reboot
 
 ---
 

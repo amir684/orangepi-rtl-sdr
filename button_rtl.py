@@ -36,8 +36,25 @@ rtl_active  = False          # flag to stop display thread after kill
 ap_running  = False          # flag for AP mode active
 display_lock = threading.Lock()
 
-oled_brightness = 2          # 0=dim … 4=max
+BRIGHTNESS_FILE = "/etc/button_rtl_brightness"
 BRIGHTNESS_LEVELS = [0x10, 0x40, 0x8F, 0xCF, 0xFF]
+
+def _load_brightness():
+    try:
+        with open(BRIGHTNESS_FILE) as f:
+            v = int(f.read().strip())
+            return max(0, min(4, v))
+    except:
+        return 2
+
+def _save_brightness(level):
+    try:
+        with open(BRIGHTNESS_FILE, "w") as f:
+            f.write(str(level))
+    except:
+        pass
+
+oled_brightness = _load_brightness()
 
 MENU_ITEMS_IDLE = ["AP Mode", "WiFi Mode", "Brightness", "< Back"]
 MENU_ITEMS_AP   = ["Stop AP", "WiFi Mode", "Brightness", "< Back"]
@@ -204,6 +221,7 @@ for pin in [BTN_UP, BTN_DOWN, BTN_SEL, BTN_BACK, BTN_RIGHT]:
 
 bus = SMBus(BUS)
 init_display(bus)
+set_contrast(bus, oled_brightness)
 
 def refresh_idle():
     rtl_on = rtl_process is not None and rtl_process.poll() is None
@@ -410,6 +428,7 @@ while True:
             if oled_brightness < 4:
                 oled_brightness += 1
                 set_contrast(bus, oled_brightness)
+                _save_brightness(oled_brightness)
             _show_brightness()
             wait_release(BTN_RIGHT)
 
@@ -418,6 +437,7 @@ while True:
             if oled_brightness > 0:
                 oled_brightness -= 1
                 set_contrast(bus, oled_brightness)
+                _save_brightness(oled_brightness)
             _show_brightness()
             wait_release(BTN_BACK)
 
