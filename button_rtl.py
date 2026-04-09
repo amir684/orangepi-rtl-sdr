@@ -102,7 +102,7 @@ def get_cpu_temp():
     except:
         return ""
 
-def show(bus, line1, line2="", temp_right=False):
+def show(bus, line1, line2="", temp_right=False, line2_right=""):
     with display_lock:
         img = Image.new('1', (128, 32), 0)
         d = ImageDraw.Draw(img)
@@ -112,6 +112,9 @@ def show(bus, line1, line2="", temp_right=False):
             temp = get_cpu_temp()
             tw = int(d.textlength(temp, font=font))
             d.text((127 - tw, 1), temp, font=font, fill=1)
+        if line2_right:
+            rw = int(d.textlength(line2_right, font=font))
+            d.text((127 - rw, 17), line2_right, font=font, fill=1)
         display_image(bus, img)
 
 def show_menu(bus, title, items, idx):
@@ -135,6 +138,26 @@ def get_ip():
 
 def current_ip():
     return "192.168.100.1" if ap_running else get_ip()
+
+def get_rssi():
+    try:
+        r = subprocess.run(["iw", "dev", "wlan0", "link"],
+                           capture_output=True, text=True)
+        for line in r.stdout.splitlines():
+            if "signal:" in line:
+                return line.strip().split()[1] + "dBm"
+    except:
+        pass
+    return ""
+
+def get_ap_clients():
+    try:
+        r = subprocess.run(["iw", "dev", "wlan0", "station", "dump"],
+                           capture_output=True, text=True)
+        count = r.stdout.count("Station ")
+        return f"{count}cli"
+    except:
+        return ""
 
 def get_last_wifi():
     r = subprocess.run(["nmcli","-t","-f","NAME,TYPE","con","show"],
@@ -196,7 +219,9 @@ def read_rtl(proc, bus_ref):
             try:
                 hz = int(line.split()[-1])
                 if rtl_active and state == "idle":
-                    show(bus_ref, current_ip(), format_freq(hz), temp_right=True)
+                    r2 = get_ap_clients() if ap_running else get_rssi()
+                    show(bus_ref, current_ip(), format_freq(hz),
+                         temp_right=True, line2_right=r2)
             except: pass
 
 # ── Button helpers ────────────────────────────────────────
@@ -228,10 +253,12 @@ def refresh_idle():
     if ap_running:
         line1 = "192.168.100.1"
         line2 = "AP:ON RTL:" + ("ON" if rtl_on else "OFF")
+        line2_right = get_ap_clients()
     else:
         line1 = get_ip()
         line2 = "RTL: ON" if rtl_on else "RTL: OFF"
-    show(bus, line1, line2, temp_right=True)
+        line2_right = get_rssi()
+    show(bus, line1, line2, temp_right=True, line2_right=line2_right)
 
 refresh_idle()
 
