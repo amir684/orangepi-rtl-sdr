@@ -219,7 +219,7 @@ def read_rtl(proc, bus_ref):
             try:
                 hz = int(line.split()[-1])
                 if rtl_active and state == "idle":
-                    r2 = get_ap_clients() if ap_running else get_rssi()
+                    r2 = "" if ap_running else get_rssi()
                     show(bus_ref, current_ip(), format_freq(hz),
                          temp_right=True, line2_right=r2)
             except: pass
@@ -253,7 +253,7 @@ def refresh_idle():
     if ap_running:
         line1 = "192.168.100.1"
         line2 = "AP:ON RTL:" + ("ON" if rtl_on else "OFF")
-        line2_right = get_ap_clients()
+        line2_right = ""
     else:
         line1 = get_ip()
         line2 = "RTL: ON" if rtl_on else "RTL: OFF"
