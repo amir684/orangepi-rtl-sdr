@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import json
 import socket
@@ -42,6 +43,19 @@ current_sdr_mode = "rtltcp"  # active SDR mode
 sdr_data    = []             # [(label, mode_id), ...]
 sdr_idx     = 0
 
+# AutoRX config edit state
+cfg_menu_idx      = 0
+cfg_edit_field    = ""
+cfg_edit_chars    = []
+cfg_edit_cursor   = 0
+cfg_edit_editable = []
+cfg_call_chars    = []
+cfg_call_char_idx = 0
+
+AUTORX_CFG_ITEMS = ["Latitude", "Longitude", "Altitude", "Callsign", "< Back"]
+CALL_CHARS = (list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/") +
+              ["<DEL>", "<OK>"])
+
 BRIGHTNESS_FILE = "/etc/button_rtl_brightness"
 BRIGHTNESS_LEVELS = [0x10, 0x40, 0x8F, 0xCF, 0xFF]
 
@@ -62,8 +76,8 @@ def _save_brightness(level):
 
 oled_brightness = _load_brightness()
 
-MENU_ITEMS_IDLE = ["SDR Mode", "AP Mode", "WiFi Mode", "Brightness", "Power Off", "< Back"]
-MENU_ITEMS_AP   = ["SDR Mode", "Stop AP", "WiFi Mode", "Brightness", "Power Off", "< Back"]
+MENU_ITEMS_IDLE = ["SDR Mode", "AutoRX Cfg", "AP Mode", "WiFi Mode", "Brightness", "Power Off", "< Back"]
+MENU_ITEMS_AP   = ["SDR Mode", "AutoRX Cfg", "Stop AP", "WiFi Mode", "Brightness", "Power Off", "< Back"]
 MENU_ITEMS = MENU_ITEMS_IDLE
 WIFI_ITEMS  = ["Last Network", "Scan Networks", "< Back"]
 
@@ -238,6 +252,117 @@ def get_autorx_status():
         return f"Sonde:{count}" if count else "Scanning..."
     except:
         return "Scanning..."
+
+AUTORX_CFG_FILE = "/home/orangepi/radiosonde_auto_rx/auto_rx/station.cfg"
+
+def read_autorx_config():
+    lat, lon, alt, cs = 32.0853, 34.7818, 30, "STATION"
+    try:
+        with open(AUTORX_CFG_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('station_lat') and '=' in line:
+                    lat = float(line.split('=')[1].strip())
+                elif line.startswith('station_lon') and '=' in line:
+                    lon = float(line.split('=')[1].strip())
+                elif line.startswith('station_alt') and '=' in line:
+                    alt = int(float(line.split('=')[1].strip()))
+                elif line.startswith('station_callsign') and '=' in line:
+                    cs = line.split('=')[1].strip().split('#')[0].strip()
+    except:
+        pass
+    return lat, lon, alt, cs
+
+def save_autorx_field(field, value):
+    try:
+        with open(AUTORX_CFG_FILE, 'r') as f:
+            content = f.read()
+        content = re.sub(rf'(?m)^{field}\s*=.*', f'{field} = {value}', content)
+        with open(AUTORX_CFG_FILE, 'w') as f:
+            f.write(content)
+        return True
+    except:
+        return False
+
+def float_to_lat_chars(lat):
+    sign = '+' if lat >= 0 else '-'
+    lat = min(abs(lat), 90.9999)
+    i = int(lat); d = round((lat - i) * 10000)
+    if d >= 10000: i += 1; d = 0
+    return ([sign, str(i//10%10), str(i%10), '.',
+             str(d//1000), str(d//100%10), str(d//10%10), str(d%10)],
+            [0, 1, 2, 4, 5, 6, 7])
+
+def lat_chars_to_float(c):
+    s = 1 if c[0]=='+' else -1
+    return round(s*(int(c[1])*10+int(c[2])+int(c[4])*.1+int(c[5])*.01+int(c[6])*.001+int(c[7])*.0001), 4)
+
+def float_to_lon_chars(lon):
+    sign = '+' if lon >= 0 else '-'
+    lon = min(abs(lon), 180.9999)
+    i = int(lon); d = round((lon - i) * 10000)
+    if d >= 10000: i += 1; d = 0
+    return ([sign, str(i//100), str(i//10%10), str(i%10), '.',
+             str(d//1000), str(d//100%10), str(d//10%10), str(d%10)],
+            [0, 1, 2, 3, 5, 6, 7, 8])
+
+def lon_chars_to_float(c):
+    s = 1 if c[0]=='+' else -1
+    return round(s*(int(c[1])*100+int(c[2])*10+int(c[3])+int(c[5])*.1+int(c[6])*.01+int(c[7])*.001+int(c[8])*.0001), 4)
+
+def int_to_alt_chars(alt):
+    alt = max(0, min(9999, int(alt)))
+    return ([str(alt//1000), str(alt//100%10), str(alt//10%10), str(alt%10)],
+            [0, 1, 2, 3])
+
+def alt_chars_to_int(c):
+    return int(c[0])*1000 + int(c[1])*100 + int(c[2])*10 + int(c[3])
+
+def _show_coord_edit():
+    labels = {"lat": "Lat", "lon": "Lon", "alt": "Alt"}
+    lbl = labels.get(cfg_edit_field, "")
+    val = "".join(cfg_edit_chars)
+    char_idx = cfg_edit_editable[cfg_edit_cursor]
+    with display_lock:
+        img = Image.new('1', (128, 32), 0)
+        d = ImageDraw.Draw(img)
+        full_lbl = lbl + ":"
+        d.text((0, 1), full_lbl + val, font=font, fill=1)
+        lw = int(d.textlength(full_lbl, font=font))
+        bw = int(d.textlength("".join(cfg_edit_chars[:char_idx]), font=font))
+        cw = max(int(d.textlength(cfg_edit_chars[char_idx], font=font)), 5)
+        x = lw + bw
+        d.rectangle([x, 14, x + cw, 15], fill=1)
+        d.text((0, 17), "^v:val  <>:pos  OK", font=font, fill=1)
+        display_image(bus, img)
+
+def _show_call_edit():
+    disp = "".join(cfg_call_chars[-10:]) if len(cfg_call_chars) > 10 else "".join(cfg_call_chars)
+    show(bus, "Callsign:", disp + "[" + CALL_CHARS[cfg_call_char_idx] + "]")
+
+def _coord_up():
+    global cfg_edit_chars
+    ci = cfg_edit_editable[cfg_edit_cursor]
+    if ci == 0 and cfg_edit_field in ("lat", "lon"):
+        cfg_edit_chars[0] = '-' if cfg_edit_chars[0] == '+' else '+'
+    else:
+        cfg_edit_chars[ci] = str((int(cfg_edit_chars[ci]) + 1) % 10)
+
+def _coord_down():
+    global cfg_edit_chars
+    ci = cfg_edit_editable[cfg_edit_cursor]
+    if ci == 0 and cfg_edit_field in ("lat", "lon"):
+        cfg_edit_chars[0] = '-' if cfg_edit_chars[0] == '+' else '+'
+    else:
+        cfg_edit_chars[ci] = str((int(cfg_edit_chars[ci]) - 1) % 10)
+
+def _coord_save():
+    if cfg_edit_field == "lat":
+        save_autorx_field("station_lat", f"{lat_chars_to_float(cfg_edit_chars):.4f}")
+    elif cfg_edit_field == "lon":
+        save_autorx_field("station_lon", f"{lon_chars_to_float(cfg_edit_chars):.4f}")
+    elif cfg_edit_field == "alt":
+        save_autorx_field("station_alt", str(alt_chars_to_int(cfg_edit_chars)))
 
 def get_last_wifi():
     r = subprocess.run(["nmcli","-t","-f","NAME,TYPE","con","show"],
@@ -433,7 +558,16 @@ while True:
         elif GPIO.input(BTN_SEL) == GPIO.LOW:
             wait_release(BTN_SEL)
             choice = MENU_ITEMS[menu_idx]
-            if choice == "SDR Mode":
+            if choice == "AutoRX Cfg":
+                if not os.path.exists(AUTORX_CFG_FILE):
+                    show(bus, "AutoRX", "not installed")
+                    time.sleep(2)
+                    show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
+                else:
+                    cfg_menu_idx = 0
+                    show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+                    state = "autorx_config"
+            elif choice == "SDR Mode":
                 sdr_data = get_sdr_menu()
                 sdr_idx  = 0
                 show_menu(bus, "-- SDR Mode --",
@@ -473,6 +607,119 @@ while True:
             elif choice == "< Back":
                 state = "idle"
                 refresh_idle()
+
+    # ── AUTORX CONFIG MENU ────────────────────────────────
+    elif state == "autorx_config":
+        if GPIO.input(BTN_UP) == GPIO.LOW:
+            time.sleep(0.05)
+            cfg_menu_idx = (cfg_menu_idx - 1) % len(AUTORX_CFG_ITEMS)
+            show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+            wait_release(BTN_UP)
+        elif GPIO.input(BTN_DOWN) == GPIO.LOW:
+            time.sleep(0.05)
+            cfg_menu_idx = (cfg_menu_idx + 1) % len(AUTORX_CFG_ITEMS)
+            show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+            wait_release(BTN_DOWN)
+        elif GPIO.input(BTN_BACK) == GPIO.LOW:
+            time.sleep(0.05)
+            state = "menu"; menu_idx = 0
+            show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
+            wait_release(BTN_BACK)
+        elif GPIO.input(BTN_SEL) == GPIO.LOW:
+            wait_release(BTN_SEL)
+            choice = AUTORX_CFG_ITEMS[cfg_menu_idx]
+            lat, lon, alt, cs = read_autorx_config()
+            if choice == "Latitude":
+                cfg_edit_field = "lat"
+                cfg_edit_chars[:], cfg_edit_editable[:] = float_to_lat_chars(lat)
+                cfg_edit_cursor = 0; state = "autorx_edit_coord"
+                _show_coord_edit()
+            elif choice == "Longitude":
+                cfg_edit_field = "lon"
+                cfg_edit_chars[:], cfg_edit_editable[:] = float_to_lon_chars(lon)
+                cfg_edit_cursor = 0; state = "autorx_edit_coord"
+                _show_coord_edit()
+            elif choice == "Altitude":
+                cfg_edit_field = "alt"
+                cfg_edit_chars[:], cfg_edit_editable[:] = int_to_alt_chars(alt)
+                cfg_edit_cursor = 0; state = "autorx_edit_coord"
+                _show_coord_edit()
+            elif choice == "Callsign":
+                cfg_call_chars[:] = list(cs.upper()[:8])
+                cfg_call_char_idx = 0; state = "autorx_edit_call"
+                _show_call_edit()
+            elif choice == "< Back":
+                state = "menu"; menu_idx = 0
+                show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
+
+    # ── AUTORX COORD EDIT ─────────────────────────────────
+    elif state == "autorx_edit_coord":
+        if GPIO.input(BTN_UP) == GPIO.LOW:
+            time.sleep(0.04)
+            _coord_up(); _show_coord_edit()
+            wait_release(BTN_UP)
+        elif GPIO.input(BTN_DOWN) == GPIO.LOW:
+            time.sleep(0.04)
+            _coord_down(); _show_coord_edit()
+            wait_release(BTN_DOWN)
+        elif GPIO.input(BTN_RIGHT) == GPIO.LOW:
+            time.sleep(0.04)
+            cfg_edit_cursor = (cfg_edit_cursor + 1) % len(cfg_edit_editable)
+            _show_coord_edit(); wait_release(BTN_RIGHT)
+        elif GPIO.input(BTN_BACK) == GPIO.LOW:
+            time.sleep(0.04)
+            if cfg_edit_cursor > 0:
+                cfg_edit_cursor -= 1
+                _show_coord_edit(); wait_release(BTN_BACK)
+            else:
+                wait_release(BTN_BACK)
+                state = "autorx_config"
+                show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+        elif GPIO.input(BTN_SEL) == GPIO.LOW:
+            wait_release(BTN_SEL)
+            _coord_save()
+            show(bus, "Saved!", "".join(cfg_edit_chars))
+            time.sleep(1)
+            state = "autorx_config"
+            show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+
+    # ── AUTORX CALLSIGN EDIT ──────────────────────────────
+    elif state == "autorx_edit_call":
+        if GPIO.input(BTN_UP) == GPIO.LOW:
+            time.sleep(0.04)
+            cfg_call_char_idx = (cfg_call_char_idx - 1) % len(CALL_CHARS)
+            _show_call_edit(); wait_release(BTN_UP)
+        elif GPIO.input(BTN_DOWN) == GPIO.LOW:
+            time.sleep(0.04)
+            cfg_call_char_idx = (cfg_call_char_idx + 1) % len(CALL_CHARS)
+            _show_call_edit(); wait_release(BTN_DOWN)
+        elif GPIO.input(BTN_BACK) == GPIO.LOW:
+            time.sleep(0.05)
+            if cfg_call_chars:
+                cfg_call_chars.pop()
+                _show_call_edit()
+            else:
+                state = "autorx_config"
+                show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+            wait_release(BTN_BACK)
+        elif GPIO.input(BTN_SEL) == GPIO.LOW:
+            wait_release(BTN_SEL)
+            ch = CALL_CHARS[cfg_call_char_idx]
+            if ch == "<DEL>":
+                if cfg_call_chars: cfg_call_chars.pop()
+                _show_call_edit()
+            elif ch == "<OK>":
+                if cfg_call_chars:
+                    save_autorx_field("station_callsign",
+                                      "".join(cfg_call_chars))
+                    show(bus, "Saved!", "".join(cfg_call_chars))
+                    time.sleep(1)
+                    state = "autorx_config"
+                    show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+            else:
+                if len(cfg_call_chars) < 8:
+                    cfg_call_chars.append(ch)
+                _show_call_edit()
 
     # ── SDR MENU ──────────────────────────────────────────
     elif state == "sdr_menu":
