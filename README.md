@@ -32,7 +32,7 @@ Supports WiFi client mode, 5GHz AP mode, and real-time frequency display — no 
 |-------------|----------|------|----------|
 | UP | PI1 | BTN_UP | Scroll up |
 | DOWN | PI3 | BTN_DOWN | Scroll down |
-| LEFT | PI0 | BTN_BACK | Back / Cancel |
+| LEFT | PI14 | BTN_BACK | Back / Cancel |
 | RIGHT | PI2 | BTN_RIGHT | Toggle RTL-TCP / Increase brightness |
 | CENTER | PI4 | BTN_SEL | Short press: Select — Long press (1s): Open menu |
 | GND | GND | — | Common ground |

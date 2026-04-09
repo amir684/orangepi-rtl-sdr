@@ -11,7 +11,7 @@ ADDR = 0x3C
 BUS  = 2
 BTN_UP    = "PI1"
 BTN_DOWN  = "PI3"
-BTN_BACK  = "PI0"
+BTN_BACK  = "PI14"
 BTN_RIGHT = "PI2"
 BTN_SEL   = "PI4"
 
