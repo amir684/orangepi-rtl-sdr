@@ -1,3 +1,5 @@
+import os
+import shutil
 import socket
 import time
 import subprocess
@@ -35,6 +37,9 @@ rtl_process = None
 rtl_active  = False          # flag to stop display thread after kill
 ap_running  = False          # flag for AP mode active
 display_lock = threading.Lock()
+current_sdr_mode = "rtltcp"  # active SDR mode
+sdr_data    = []             # [(label, mode_id), ...]
+sdr_idx     = 0
 
 BRIGHTNESS_FILE = "/etc/button_rtl_brightness"
 BRIGHTNESS_LEVELS = [0x10, 0x40, 0x8F, 0xCF, 0xFF]
@@ -56,8 +61,8 @@ def _save_brightness(level):
 
 oled_brightness = _load_brightness()
 
-MENU_ITEMS_IDLE = ["AP Mode", "WiFi Mode", "Brightness", "Power Off", "< Back"]
-MENU_ITEMS_AP   = ["Stop AP", "WiFi Mode", "Brightness", "Power Off", "< Back"]
+MENU_ITEMS_IDLE = ["SDR Mode", "AP Mode", "WiFi Mode", "Brightness", "Power Off", "< Back"]
+MENU_ITEMS_AP   = ["SDR Mode", "Stop AP", "WiFi Mode", "Brightness", "Power Off", "< Back"]
 MENU_ITEMS = MENU_ITEMS_IDLE
 WIFI_ITEMS  = ["Last Network", "Scan Networks", "< Back"]
 
@@ -159,6 +164,57 @@ def get_ap_clients():
     except:
         return ""
 
+def get_sdr_menu():
+    """Returns [(label, mode_id)] for installed SDR modes."""
+    modes = []
+    def add(label, mode_id):
+        marker = "*" if mode_id == current_sdr_mode else " "
+        modes.append((marker + label, mode_id))
+    add("RTL-TCP", "rtltcp")
+    if shutil.which("readsb"):
+        add("ADS-B", "adsb")
+    if os.path.exists("/home/orangepi/radiosonde_auto_rx/auto_rx/auto_rx.py"):
+        add("AutoRX", "autorx")
+    if shutil.which("rtl_433"):
+        add("RTL-433", "rtl433")
+    if shutil.which("rtl_ais"):
+        add("AIS", "ais")
+    add("SDR Off", "off")
+    modes.append(("< Back", "back"))
+    return modes
+
+def stop_all_sdr():
+    global rtl_process, rtl_active
+    rtl_active = False
+    subprocess.call(["pkill", "-f", "rtl_tcp"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    rtl_process = None
+    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "rtl-ais"]:
+        subprocess.call(["systemctl", "stop", svc],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.5)
+
+def start_sdr(mode):
+    global rtl_process, rtl_active, current_sdr_mode
+    stop_all_sdr()
+    current_sdr_mode = mode
+    if mode == "rtltcp":
+        rtl_active = True
+        rtl_process = subprocess.Popen(
+            ["stdbuf", "-oL", "rtl_tcp", "-a", "0.0.0.0", "-p", "1234"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        threading.Thread(target=read_rtl, args=(rtl_process, bus), daemon=True).start()
+    elif mode == "adsb":
+        subprocess.call(["systemctl", "start", "readsb"])
+        subprocess.call(["systemctl", "start", "tar1090"])
+    elif mode == "autorx":
+        subprocess.call(["systemctl", "start", "auto-rx"])
+    elif mode == "rtl433":
+        subprocess.call(["systemctl", "start", "rtl_433"])
+    elif mode == "ais":
+        subprocess.call(["systemctl", "start", "rtl-ais"])
+    # "off" → stop only (already done above)
+
 def get_last_wifi():
     r = subprocess.run(["nmcli","-t","-f","NAME,TYPE","con","show"],
                        capture_output=True, text=True)
@@ -249,27 +305,28 @@ init_display(bus)
 set_contrast(bus, oled_brightness)
 
 def refresh_idle():
-    rtl_on = rtl_process is not None and rtl_process.poll() is None
-    if ap_running:
-        line1 = "192.168.100.1"
-        line2 = "AP:ON RTL:" + ("ON" if rtl_on else "OFF")
-        line2_right = ""
+    line1 = "192.168.100.1" if ap_running else get_ip()
+    pfx   = "AP " if ap_running else ""
+    if current_sdr_mode == "rtltcp":
+        rtl_on    = rtl_process is not None and rtl_process.poll() is None
+        line2     = pfx + ("RTL:ON" if rtl_on else "RTL:OFF")
+        line2_right = "" if ap_running else get_rssi()
+    elif current_sdr_mode == "adsb":
+        line2 = pfx + "ADS-B ON";  line2_right = ""
+    elif current_sdr_mode == "autorx":
+        line2 = pfx + "AutoRX ON"; line2_right = ""
+    elif current_sdr_mode == "rtl433":
+        line2 = pfx + "RTL-433 ON"; line2_right = ""
+    elif current_sdr_mode == "ais":
+        line2 = pfx + "AIS ON";    line2_right = ""
     else:
-        line1 = get_ip()
-        line2 = "RTL: ON" if rtl_on else "RTL: OFF"
-        line2_right = get_rssi()
+        line2 = pfx + "SDR: OFF";  line2_right = ""
     show(bus, line1, line2, temp_right=True, line2_right=line2_right)
 
 refresh_idle()
 
 # ── Auto-start RTL-TCP on boot ────────────────────────────
-subprocess.call(["pkill", "-f", "rtl_tcp"])
-time.sleep(0.3)
-rtl_active = True
-rtl_process = subprocess.Popen(
-    ["stdbuf", "-oL", "rtl_tcp", "-a", "0.0.0.0", "-p", "1234"],
-    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-threading.Thread(target=read_rtl, args=(rtl_process, bus), daemon=True).start()
+start_sdr("rtltcp")
 refresh_idle()
 
 
@@ -309,27 +366,17 @@ while True:
                         show(bus, current_ip(), "RTL: OFF", temp_right=True)
                     wait_release(BTN_UP)
 
-        elif GPIO.input(BTN_RIGHT) == GPIO.LOW:
+        elif GPIO.input(BTN_RIGHT) == GPIO.LOW and current_sdr_mode == "rtltcp":
             now = time.time()
             if now - last_up_press > 0.5:
                 last_up_press = now
                 time.sleep(0.05)
                 if GPIO.input(BTN_RIGHT) == GPIO.LOW:
                     if rtl_process is None or rtl_process.poll() is not None:
-                        subprocess.call(["pkill","-f","rtl_tcp"])
-                        time.sleep(0.3)
-                        rtl_active = True
-                        rtl_process = subprocess.Popen(
-                            ["stdbuf","-oL","rtl_tcp","-a","0.0.0.0","-p","1234"],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                        threading.Thread(target=read_rtl,
-                                         args=(rtl_process, bus), daemon=True).start()
+                        start_sdr("rtltcp")
                         show(bus, current_ip(), "RTL: ON", temp_right=True)
                     else:
-                        rtl_active = False
-                        subprocess.call(["pkill","-f","rtl_tcp"])
-                        rtl_process = None
-                        time.sleep(0.3)
+                        stop_all_sdr()
                         show(bus, current_ip(), "RTL: OFF", temp_right=True)
                     wait_release(BTN_RIGHT)
 
@@ -362,7 +409,13 @@ while True:
         elif GPIO.input(BTN_SEL) == GPIO.LOW:
             wait_release(BTN_SEL)
             choice = MENU_ITEMS[menu_idx]
-            if choice == "AP Mode":
+            if choice == "SDR Mode":
+                sdr_data = get_sdr_menu()
+                sdr_idx  = 0
+                show_menu(bus, "-- SDR Mode --",
+                          [l for l, _ in sdr_data], sdr_idx)
+                state = "sdr_menu"
+            elif choice == "AP Mode":
                 show(bus, "Starting AP...", "5GHz open")
                 if start_ap():
                     ap_running = True
@@ -394,6 +447,41 @@ while True:
                 time.sleep(2)
                 subprocess.call(["sudo", "poweroff"])
             elif choice == "< Back":
+                state = "idle"
+                refresh_idle()
+
+    # ── SDR MENU ──────────────────────────────────────────
+    elif state == "sdr_menu":
+        labels = [l for l, _ in sdr_data]
+        if GPIO.input(BTN_UP) == GPIO.LOW:
+            time.sleep(0.05)
+            sdr_idx = (sdr_idx - 1) % len(labels)
+            show_menu(bus, "-- SDR Mode --", labels, sdr_idx)
+            wait_release(BTN_UP)
+
+        elif GPIO.input(BTN_DOWN) == GPIO.LOW:
+            time.sleep(0.05)
+            sdr_idx = (sdr_idx + 1) % len(labels)
+            show_menu(bus, "-- SDR Mode --", labels, sdr_idx)
+            wait_release(BTN_DOWN)
+
+        elif GPIO.input(BTN_BACK) == GPIO.LOW:
+            time.sleep(0.05)
+            state = "menu"
+            menu_idx = 0
+            show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
+            wait_release(BTN_BACK)
+
+        elif GPIO.input(BTN_SEL) == GPIO.LOW:
+            wait_release(BTN_SEL)
+            _, mode_id = sdr_data[sdr_idx]
+            if mode_id == "back":
+                state = "menu"
+                menu_idx = 0
+                show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
+            else:
+                show(bus, "Switching...", labels[sdr_idx].strip())
+                start_sdr(mode_id)
                 state = "idle"
                 refresh_idle()
 
