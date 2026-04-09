@@ -1,6 +1,6 @@
 # OrangePi Zero 2W — RTL-SDR Server with OLED UI
 
-A fully standalone RTL-SDR server running on an **Orange Pi Zero 2W**, controlled via 4 physical buttons and a 128×32 OLED display.  
+A fully standalone RTL-SDR server running on an **Orange Pi Zero 2W**, controlled via a 5-direction digital joystick and a 128×32 OLED display.  
 Supports WiFi client mode, 5GHz AP mode, and real-time frequency display — no screen or keyboard required after setup.
 
 ---
@@ -9,7 +9,7 @@ Supports WiFi client mode, 5GHz AP mode, and real-time frequency display — no 
 
 - **RTL-TCP server** — start/stop `rtl_tcp` with a button press, real-time frequency display as clients tune
 - **128×32 OLED UI** — shows IP address, RTL status, current frequency, CPU temperature
-- **4-button menu system** — navigate with Up/Down, select with SEL, back with BACK
+- **5-direction joystick** — navigate menus, toggle RTL-TCP, adjust brightness
 - **WiFi management** — connect to last saved network or scan and join new networks with on-screen password entry
 - **5GHz AP mode** — turns the Pi into an open hotspot (`OrangePi-SDR`) using hostapd + dnsmasq
 - **Systemd service** — auto-starts on boot, restarts automatically on crash
@@ -24,18 +24,20 @@ Supports WiFi client mode, 5GHz AP mode, and real-time frequency display — no 
 | OS | Orange Pi OS 1.0.2 (Bookworm) |
 | SDR Dongle | RTL-SDR (any RTL2832U-based) via USB |
 | Display | SSD1306 128×32 OLED — I2C bus 2, address `0x3C` |
-| Buttons | 4× tactile push buttons (active LOW, internal pull-up) |
+| Joystick | 5-direction digital joystick (active LOW, internal pull-up) |
 
-### Button Wiring
+### Joystick Wiring
 
-| GPIO Pin | Role | Function |
-|----------|------|----------|
-| PI0 | BTN_BACK | Back / Cancel |
-| PI1 | BTN_UP | Scroll up / Toggle RTL |
-| PI3 | BTN_DOWN | Scroll down |
-| PI4 | BTN_SEL | Short press: Select — Long press (1s): Open menu |
+| Joystick Pin | GPIO Pin | Role | Function |
+|-------------|----------|------|----------|
+| UP | PI1 | BTN_UP | Scroll up |
+| DOWN | PI3 | BTN_DOWN | Scroll down |
+| LEFT | PI0 | BTN_BACK | Back / Cancel |
+| RIGHT | PI2 | BTN_RIGHT | Toggle RTL-TCP / Increase brightness |
+| CENTER | PI4 | BTN_SEL | Short press: Select — Long press (1s): Open menu |
+| GND | GND | — | Common ground |
 
-> All buttons: one side to **GND**, other side to the GPIO pin (internal pull-up enabled).
+> All joystick pins: active LOW with internal pull-up enabled.
 
 ### OLED Wiring (I2C)
 
