@@ -172,11 +172,11 @@ def get_sdr_menu():
         marker = "*" if mode_id == current_sdr_mode else " "
         modes.append((marker + label, mode_id))
     add("RTL-TCP", "rtltcp")
-    if shutil.which("readsb"):
-        add("ADS-B", "adsb")
     if os.path.exists("/home/orangepi/radiosonde_auto_rx/auto_rx/auto_rx.py") \
             or os.path.exists("/lib/systemd/system/auto-rx.service"):
         add("AutoRX", "autorx")
+    if shutil.which("readsb"):
+        add("ADS-B", "adsb")
     if shutil.which("rtl_433"):
         add("RTL-433", "rtl433")
     if shutil.which("rtl_ais"):
