@@ -109,8 +109,13 @@ if [[ "$ANS_AUTORX" =~ ^[Yy] ]]; then
            /home/orangepi/radiosonde_auto_rx/auto_rx/station.cfg
     fi
 
+    echo "[5] Building AutoRX decoders..."
+    cd /home/orangepi/radiosonde_auto_rx/auto_rx
+    sudo -u orangepi bash build.sh 2>&1 | tail -3
+    cd -
+
     echo "[5] AutoRX installed at /home/orangepi/radiosonde_auto_rx"
-    echo "[5] Edit station.cfg before first use."
+    echo "[5] Edit station.cfg before first use (optional)."
 else
     echo "[5] Skipping AutoRX."
 fi
