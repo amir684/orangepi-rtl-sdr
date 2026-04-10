@@ -1,0 +1,12 @@
+[Unit]
+Description=NOAA APT Web UI
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/noaa_web.py
+Restart=on-failure
+RestartSec=5
+User=orangepi
+
+[Install]
+WantedBy=multi-user.target

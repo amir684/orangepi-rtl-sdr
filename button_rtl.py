@@ -202,6 +202,8 @@ def get_sdr_menu():
         add("RTL-433", "rtl433")
     if shutil.which("AIS-catcher"):
         add("AIS", "ais")
+    if shutil.which("noaa-apt"):
+        add("NOAA APT", "noaa")
     add("SDR Off", "off")
     modes.append(("< Back", "back"))
     return modes
@@ -212,7 +214,7 @@ def stop_all_sdr():
     subprocess.call(["pkill", "-f", "rtl_tcp"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     rtl_process = None
-    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "ais_catcher"]:
+    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "ais_catcher", "noaa_capture"]:
         subprocess.call(["systemctl", "stop", svc],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(0.5)
@@ -236,6 +238,8 @@ def start_sdr(mode):
         subprocess.call(["systemctl", "start", "rtl_433"])
     elif mode == "ais":
         subprocess.call(["systemctl", "start", "ais_catcher"])
+    elif mode == "noaa":
+        subprocess.call(["systemctl", "start", "noaa_capture"])
     # "off" → stop only (already done above)
 
 def get_adsb_count():
@@ -259,6 +263,28 @@ def get_autorx_status():
         return f"Sonde:{count}" if count else "Scanning..."
     except:
         return "Scanning..."
+
+def get_noaa_status():
+    """Return next satellite pass or 'Capturing' if active."""
+    if os.path.exists("/tmp/noaa_capturing"):
+        try:
+            sat = open("/tmp/noaa_capturing").read().strip()
+            return sat.replace("NOAA-", "N")[:10]
+        except:
+            return "Capturing"
+    try:
+        with open("/var/lib/noaa-apt/images/next_pass.json") as f:
+            data = json.load(f)
+        wait = data.get("wait_sec", 0)
+        sat  = data.get("satellite", "").replace("NOAA-", "N")
+        if wait <= 0:
+            return f"{sat} NOW"
+        m = wait // 60
+        if m < 60:
+            return f"{sat} {m}m"
+        return f"{sat} {m//60}h{m%60:02d}m"
+    except:
+        return "Scheduling..."
 
 def get_ais_status():
     """Return number of vessels seen from AIS-catcher HTTP API."""
@@ -512,6 +538,8 @@ def _make_scroll_text():
         return f"{ip}:8433"
     elif current_sdr_mode == "ais":
         return f"{ip}:8424"
+    elif current_sdr_mode == "noaa":
+        return f"{ip}:8080"
     else:
         return ip
 
@@ -529,6 +557,8 @@ def _get_line2_status():
             _status_cache["val"] = get_rtl433_status()
         elif current_sdr_mode == "ais":
             _status_cache["val"] = get_ais_status()
+        elif current_sdr_mode == "noaa":
+            _status_cache["val"] = get_noaa_status()
         else:
             _status_cache["val"] = ""
         _status_cache["mode"] = current_sdr_mode
@@ -566,7 +596,9 @@ def _draw_idle_frame(bus_ref, scroll_px=0):
         elif current_sdr_mode == "rtl433":
             line2 = pfx + "RTL-433 ON"
         elif current_sdr_mode == "ais":
-            line2 = pfx + "AIS ON  "
+            line2 = pfx + "AIS ON"
+        elif current_sdr_mode == "noaa":
+            line2 = pfx + "NOAA APT"
         else:
             line2 = pfx + "SDR: OFF"
 
