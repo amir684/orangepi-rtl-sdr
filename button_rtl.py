@@ -60,6 +60,45 @@ _scroll_pause   = 30
 _status_cache   = {"val": "", "mode": "", "ts": 0.0}
 
 AUTORX_CFG_ITEMS = ["Latitude", "Longitude", "Altitude", "Callsign", "< Back"]
+
+NOAA_CFG_FILE  = "/etc/noaa_apt.cfg"
+noaa_cfg_idx   = 0   # cursor in NOAA Cfg menu
+noaa_elev_chars = []
+noaa_elev_cursor = 0
+
+def _load_noaa_cfg():
+    try:
+        return json.loads(open(NOAA_CFG_FILE).read())
+    except Exception:
+        return {"auto_capture": False, "min_elev": 15}
+
+def _save_noaa_cfg(cfg):
+    try:
+        with open(NOAA_CFG_FILE, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+
+def _noaa_cfg_items():
+    cfg = _load_noaa_cfg()
+    auto = "ON" if cfg.get("auto_capture") else "OFF"
+    elev = cfg.get("min_elev", 15)
+    return [f"Auto Capture:{auto}", f"Min Elev:{elev}deg", "< Back"]
+
+def _show_noaa_elev():
+    val = "".join(noaa_elev_chars)
+    ci  = noaa_elev_cursor
+    with display_lock:
+        img = Image.new('1', (128, 32), 0)
+        d   = ImageDraw.Draw(img)
+        lbl = "MinElev:"
+        d.text((0, 1), lbl + val + "deg", font=font, fill=1)
+        lw = int(d.textlength(lbl, font=font))
+        bw = int(d.textlength(val[:ci], font=font))
+        cw = max(int(d.textlength(val[ci], font=font)), 5)
+        d.rectangle([lw + bw, 14, lw + bw + cw, 15], fill=1)
+        d.text((0, 17), "^v:val  <>:pos  OK", font=font, fill=1)
+        display_image(bus, img)
 CALL_CHARS = (list("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/") +
               ["<DEL>", "<OK>"])
 
@@ -83,8 +122,8 @@ def _save_brightness(level):
 
 oled_brightness = _load_brightness()
 
-MENU_ITEMS_IDLE = ["SDR Mode", "AutoRX Cfg", "AP Mode", "WiFi Mode", "Brightness", "Power Off", "< Back"]
-MENU_ITEMS_AP   = ["SDR Mode", "AutoRX Cfg", "Stop AP", "WiFi Mode", "Brightness", "Power Off", "< Back"]
+MENU_ITEMS_IDLE = ["SDR Mode", "AutoRX Cfg", "NOAA Cfg", "AP Mode", "WiFi Mode", "Brightness", "Power Off", "< Back"]
+MENU_ITEMS_AP   = ["SDR Mode", "AutoRX Cfg", "NOAA Cfg", "Stop AP", "WiFi Mode", "Brightness", "Power Off", "< Back"]
 MENU_ITEMS = MENU_ITEMS_IDLE
 WIFI_ITEMS  = ["Last Network", "Scan Networks", "< Back"]
 
@@ -223,6 +262,11 @@ def start_sdr(mode):
     global rtl_process, rtl_active, current_sdr_mode
     stop_all_sdr()
     current_sdr_mode = mode
+    # Write mode to file so noaa_capture.py can check it
+    try:
+        open("/tmp/sdr_mode", "w").write(mode)
+    except Exception:
+        pass
     if mode == "rtltcp":
         rtl_active = True
         rtl_process = subprocess.Popen(
@@ -760,6 +804,10 @@ while True:
                     cfg_menu_idx = 0
                     show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
                     state = "autorx_config"
+            elif choice == "NOAA Cfg":
+                noaa_cfg_idx = 0
+                show_menu(bus, "NOAA Cfg", _noaa_cfg_items(), noaa_cfg_idx)
+                state = "noaa_cfg"
             elif choice == "SDR Mode":
                 sdr_data = get_sdr_menu()
                 sdr_idx  = 0
@@ -913,6 +961,82 @@ while True:
                 if len(cfg_call_chars) < 8:
                     cfg_call_chars.append(ch)
                 _show_call_edit()
+
+    # ── NOAA CFG ──────────────────────────────────────────
+    elif state == "noaa_cfg":
+        items = _noaa_cfg_items()
+        if GPIO.input(BTN_UP) == GPIO.LOW:
+            time.sleep(0.05)
+            noaa_cfg_idx = (noaa_cfg_idx - 1) % len(items)
+            show_menu(bus, "NOAA Cfg", _noaa_cfg_items(), noaa_cfg_idx)
+            wait_release(BTN_UP)
+        elif GPIO.input(BTN_DOWN) == GPIO.LOW:
+            time.sleep(0.05)
+            noaa_cfg_idx = (noaa_cfg_idx + 1) % len(items)
+            show_menu(bus, "NOAA Cfg", _noaa_cfg_items(), noaa_cfg_idx)
+            wait_release(BTN_DOWN)
+        elif GPIO.input(BTN_BACK) == GPIO.LOW:
+            time.sleep(0.05)
+            state = "menu"; menu_idx = 0
+            show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
+            wait_release(BTN_BACK)
+        elif GPIO.input(BTN_SEL) == GPIO.LOW:
+            wait_release(BTN_SEL)
+            choice = _noaa_cfg_items()[noaa_cfg_idx]
+            if "Auto Capture" in choice:
+                cfg = _load_noaa_cfg()
+                cfg["auto_capture"] = not cfg.get("auto_capture", False)
+                _save_noaa_cfg(cfg)
+                lbl = "Auto: ON" if cfg["auto_capture"] else "Auto: OFF"
+                show(bus, lbl, "Saved!")
+                time.sleep(1)
+                show_menu(bus, "NOAA Cfg", _noaa_cfg_items(), noaa_cfg_idx)
+            elif "Min Elev" in choice:
+                cfg = _load_noaa_cfg()
+                elev = max(0, min(90, cfg.get("min_elev", 15)))
+                noaa_elev_chars[:] = [str(elev // 10), str(elev % 10)]
+                noaa_elev_cursor = 0
+                state = "noaa_elev_edit"
+                _show_noaa_elev()
+            elif "< Back" in choice:
+                state = "menu"; menu_idx = 0
+                show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
+
+    # ── NOAA ELEV EDIT ────────────────────────────────────
+    elif state == "noaa_elev_edit":
+        if GPIO.input(BTN_UP) == GPIO.LOW:
+            time.sleep(0.04)
+            noaa_elev_chars[noaa_elev_cursor] = str(
+                (int(noaa_elev_chars[noaa_elev_cursor]) + 1) % 10)
+            _show_noaa_elev(); wait_release(BTN_UP)
+        elif GPIO.input(BTN_DOWN) == GPIO.LOW:
+            time.sleep(0.04)
+            noaa_elev_chars[noaa_elev_cursor] = str(
+                (int(noaa_elev_chars[noaa_elev_cursor]) - 1) % 10)
+            _show_noaa_elev(); wait_release(BTN_DOWN)
+        elif GPIO.input(BTN_RIGHT) == GPIO.LOW:
+            time.sleep(0.04)
+            noaa_elev_cursor = (noaa_elev_cursor + 1) % 2
+            _show_noaa_elev(); wait_release(BTN_RIGHT)
+        elif GPIO.input(BTN_BACK) == GPIO.LOW:
+            time.sleep(0.04)
+            if noaa_elev_cursor > 0:
+                noaa_elev_cursor -= 1
+                _show_noaa_elev(); wait_release(BTN_BACK)
+            else:
+                wait_release(BTN_BACK)
+                state = "noaa_cfg"
+                show_menu(bus, "NOAA Cfg", _noaa_cfg_items(), noaa_cfg_idx)
+        elif GPIO.input(BTN_SEL) == GPIO.LOW:
+            wait_release(BTN_SEL)
+            elev = int(noaa_elev_chars[0]) * 10 + int(noaa_elev_chars[1])
+            cfg = _load_noaa_cfg()
+            cfg["min_elev"] = elev
+            _save_noaa_cfg(cfg)
+            show(bus, "Saved!", f"Min elev: {elev}deg")
+            time.sleep(1)
+            state = "noaa_cfg"
+            show_menu(bus, "NOAA Cfg", _noaa_cfg_items(), noaa_cfg_idx)
 
     # ── SDR MENU ──────────────────────────────────────────
     elif state == "sdr_menu":

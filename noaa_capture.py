@@ -25,17 +25,33 @@ import ephem
 LAT        = 32.0853    # Station latitude  (Tel Aviv default)
 LON        = 34.7818    # Station longitude
 ALT        = 30         # Station altitude (meters)
-MIN_ELEV   = 15         # Minimum elevation to record (degrees)
 FREQ = {
     "NOAA 15": "137.620M",
     "NOAA 18": "137.9125M",
     "NOAA 19": "137.100M",
 }
-IMAGE_DIR  = Path("/var/lib/noaa-apt/images")
-TLE_FILE   = Path("/var/lib/noaa-apt/tle.txt")
-TLE_URL    = "https://celestrak.org/NORAD/elements/gp.php?GROUP=noaa&FORMAT=tle"
-RTL_GAIN   = "40"       # RTL-SDR gain (dB), "0" for auto
+IMAGE_DIR   = Path("/var/lib/noaa-apt/images")
+TLE_FILE    = Path("/var/lib/noaa-apt/tle.txt")
+TLE_URL     = "https://celestrak.org/NORAD/elements/gp.php?GROUP=noaa&FORMAT=tle"
+CFG_FILE    = Path("/etc/noaa_apt.cfg")
+SDR_MODE_FILE = Path("/tmp/sdr_mode")
+RTL_GAIN    = "40"       # RTL-SDR gain (dB), "0" for auto
 SAMPLE_RATE = "60000"
+
+DEFAULT_CFG = {"auto_capture": False, "min_elev": 15}
+
+def load_config():
+    try:
+        data = json.loads(CFG_FILE.read_text())
+        return {**DEFAULT_CFG, **data}
+    except Exception:
+        return DEFAULT_CFG.copy()
+
+def current_sdr_mode():
+    try:
+        return SDR_MODE_FILE.read_text().strip()
+    except Exception:
+        return ""
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -80,13 +96,13 @@ def load_satellites():
     return sats
 
 # ── Pass prediction ───────────────────────────────────────────────────────────
-def next_pass(sat, observer):
+def next_pass(sat, observer, min_elev=15):
     """Return (rise_time_utc, set_time_utc, max_elevation_deg) or None."""
     try:
         info = observer.next_pass(sat)
         # info: (rise_time, rise_az, max_time, max_elev, set_time, set_az)
         max_elev = math.degrees(info[3])
-        if max_elev < MIN_ELEV:
+        if max_elev < min_elev:
             return None
         rise_dt = ephem.Date(info[0]).datetime().replace(tzinfo=timezone.utc)
         set_dt  = ephem.Date(info[4]).datetime().replace(tzinfo=timezone.utc)
@@ -210,9 +226,10 @@ def scheduler():
         obs.date = ephem.now()
 
         # Find next pass across all satellites
+        cfg = load_config()
         passes = []
         for name, sat in sats.items():
-            p = next_pass(sat, obs)
+            p = next_pass(sat, obs, cfg["min_elev"])
             if p:
                 passes.append((p[0], name, FREQ[name], p[1], p[2]))
 
@@ -223,6 +240,27 @@ def scheduler():
 
         passes.sort()
         rise, sat_name, freq, set_time, max_elev = passes[0]
+
+        # Check if we should capture this pass
+        cfg = load_config()
+        if not cfg["auto_capture"] and current_sdr_mode() != "noaa":
+            log.info(f"Next pass: {sat_name} — auto_capture OFF and not in NOAA mode, skipping")
+            # Still write next_pass.json for web UI, then sleep until after the pass
+            now_utc = datetime.now(timezone.utc)
+            wait_sec = (rise - now_utc).total_seconds()
+            duration = max(60, int((set_time - rise).total_seconds()) + 30)
+            next_info = {
+                "satellite": sat_name,
+                "rise_utc": rise.isoformat(),
+                "set_utc": set_time.isoformat(),
+                "max_elev": max_elev,
+                "wait_sec": max(0, int(wait_sec)),
+                "will_capture": False,
+            }
+            (IMAGE_DIR / "next_pass.json").write_text(json.dumps(next_info, indent=2))
+            sleep_until = wait_sec + duration
+            time.sleep(max(10, sleep_until))
+            continue
 
         now_utc = datetime.now(timezone.utc)
         wait_sec = (rise - now_utc).total_seconds()
@@ -237,6 +275,7 @@ def scheduler():
             "set_utc": set_time.isoformat(),
             "max_elev": max_elev,
             "wait_sec": max(0, int(wait_sec)),
+            "will_capture": True,
         }
         (IMAGE_DIR / "next_pass.json").write_text(json.dumps(next_info, indent=2))
 
