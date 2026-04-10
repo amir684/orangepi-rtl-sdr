@@ -1,0 +1,15 @@
+[Unit]
+Description=Radiosonde Auto-RX
+After=network.target
+
+[Service]
+Type=simple
+User=orangepi
+WorkingDirectory=/home/orangepi/radiosonde_auto_rx/auto_rx
+ExecStart=/usr/bin/python3 auto_rx.py
+Restart=on-failure
+RestartSec=10
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
