@@ -16,6 +16,7 @@ Switch between RTL-TCP, ADS-B, Radiosonde tracking, RTL-433, AIS, and more — a
 | **Radiosonde (AutoRX)** | Tracks weather balloons, web UI + OLED station config editor |
 | **RTL-433** | 433MHz sensors / IoT devices |
 | **AIS** | Ship tracking |
+| **ACARS** | Aircraft datalink messages (flight info, fuel, weather) |
 | **POCSAG pagers** | multimon-ng (optional) |
 | **128×32 OLED UI** | IP:port, mode status, frequency, CPU temp, RSSI |
 | **5-direction joystick** | Navigate menus, switch modes, configure settings |
@@ -302,6 +303,40 @@ References: [EliasOenal/multimon-ng](https://github.com/EliasOenal/multimon-ng)
 
 ---
 
+### ACARS — Aircraft datalink messages
+
+Decodes ACARS digital messages transmitted by aircraft on VHF: flight info, ETA, fuel on board, weather reports (ATIS), engine data, and more. Monitors 4 frequencies simultaneously using the RTL-SDR's 2 MHz bandwidth. Messages logged to `/var/log/acarsdec/messages.json`
+
+`acarsdec` is **not in apt** — build from source (~1 min on OrangePi Zero 2W):
+
+```bash
+sudo apt install -y cmake build-essential librtlsdr-dev libusb-1.0-0-dev \
+    libjansson-dev libxml2-dev
+
+git clone --depth=1 https://github.com/TLeconte/acarsdec.git /tmp/acarsdec
+cd /tmp/acarsdec && mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -Drtl=ON && make -j2
+sudo cp acarsdec /usr/local/bin/
+cd / && rm -rf /tmp/acarsdec
+
+sudo cp acarsdec.service /lib/systemd/system/acarsdec.service
+sudo systemctl daemon-reload
+sudo systemctl disable acarsdec   # managed by button_rtl.py
+```
+
+Default frequencies (common European/Israel ACARS): `129.125 / 130.025 / 130.425 / 130.450 MHz`  
+Adjust in `acarsdec.service` for your region.
+
+Example message:
+```json
+{"timestamp":1712750000,"station_id":"OPI","channel":0,"freq":"129.125",
+ "flight":"ELY316","tail":"4X-EHD","label":"H1","text":"ATIS TEL AVIV..."}
+```
+
+References: [TLeconte/acarsdec](https://github.com/TLeconte/acarsdec)
+
+---
+
 ## File Structure
 
 ```
@@ -320,6 +355,7 @@ Repository:
 ├── noaa_capture.service    Systemd unit — NOAA scheduler (managed)
 ├── noaa_web.service        Systemd unit — NOAA gallery (auto-start)
 ├── multimon_ng.service     Systemd unit — pager decoder (managed)
+├── acarsdec.service        Systemd unit — ACARS decoder (managed)
 ├── INSTALL_NOTES.md        Hard-won installation knowledge
 └── images/                 Project photos
 
@@ -336,6 +372,7 @@ Installed on device:
 /var/lib/noaa-apt/images/      (decoded PNG satellite images)
 /var/log/rtl_433/events.json   (RTL-433 decoded events)
 /var/log/multimon_ng/pager.log (multimon-ng decoded messages)
+/var/log/acarsdec/messages.json (ACARS decoded messages)
 /tmp/sdr_mode                  (current mode, read by noaa_capture.py)
 ```
 
@@ -366,6 +403,7 @@ Line 2: Active mode status · RSSI / aircraft count on right
 | AIS | `IP:8424` | Ships seen |
 | NOAA APT | `IP:8080` | Next pass countdown |
 | Pager | `IP 153.35M` | Last decoded message |
+| ACARS | `IP 129-131M` | Last flight + label |
 | SDR Off | `IP` | — |
 
 | Button | Action |
@@ -385,7 +423,7 @@ Hold center button for 1 second from the idle screen to open the menu.
 
 | Item | Action |
 |------|--------|
-| SDR Mode | Switch between RTL-TCP / AutoRX / ADS-B / RTL-433 / AIS / NOAA APT / Pager / Off |
+| SDR Mode | Switch between RTL-TCP / AutoRX / ADS-B / RTL-433 / AIS / NOAA APT / Pager / ACARS / Off |
 | AutoRX Cfg | Edit station coordinates and callsign on OLED |
 | NOAA Cfg | Toggle auto-capture and set minimum pass elevation |
 | AP Mode | Start 5GHz hotspot |
@@ -419,6 +457,7 @@ Navigation: **UP/DOWN** scroll · **SEL** confirm · **BACK** cancel
 | AIS | Ship tracking | `http://DEVICE_IP:8424` |
 | NOAA APT | Satellite image capture | `http://DEVICE_IP:8080` |
 | Pager | POCSAG/FLEX decoder | log: `/var/log/multimon_ng/pager.log` |
+| ACARS | Aircraft datalink messages | log: `/var/log/acarsdec/messages.json` |
 | SDR Off | Stop all SDR activity | — |
 
 Only installed modes appear in the menu.

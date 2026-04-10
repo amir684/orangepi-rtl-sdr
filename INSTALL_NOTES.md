@@ -64,6 +64,20 @@ Hard-won knowledge from building this system. Read this before installing on a f
 
 ---
 
+## ACARS — acarsdec
+
+- `acarsdec` is NOT in apt — must build from source
+- Dependencies: `cmake build-essential librtlsdr-dev libusb-1.0-0-dev libjansson-dev libxml2-dev`
+- Build: `cmake .. -DCMAKE_BUILD_TYPE=Release -Drtl=ON && make -j2`
+- Monitors multiple frequencies simultaneously within 2 MHz RTL-SDR bandwidth — all must fit within 2 MHz window
+- Israel/Europe frequencies: 129.125 / 130.025 / 130.425 / 130.450 MHz
+- Output format `-o 4` = JSON per message (one object per line)
+- `-e` flag skips empty messages, `-A` flag keeps aircraft messages only
+- JSON log at `/var/log/acarsdec/messages.json`
+- Service: `acarsdec.service` — managed by button_rtl.py
+
+---
+
 ## RTL-433
 
 - Available in apt: `sudo apt install -y rtl-433`
@@ -152,8 +166,8 @@ rm -rf /tmp/noaa-apt*
 6. `git clone https://github.com/amir684/orangepi-rtl-sdr.git && cd orangepi-rtl-sdr`
 7. `bash install.sh` — answer Y/N for each component
 8. `sudo reboot`
-9. For AIS-catcher: build manually (see above) — not in install.sh yet
-10. For NOAA APT: install noaa-apt binary manually (see above) — not in install.sh yet
+9. `bash install.sh` handles AIS-catcher, NOAA APT, multimon-ng, rtl_433 — answer Y/N
+10. For ACARS: build acarsdec manually (see above) — not in install.sh yet
 11. Edit `/home/orangepi/radiosonde_auto_rx/auto_rx/station.cfg` or use OLED menu
 12. Edit `/etc/noaa_apt.cfg` for NOAA preferences
 
