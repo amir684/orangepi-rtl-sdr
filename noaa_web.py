@@ -68,10 +68,19 @@ class Handler(BaseHTTPRequestHandler):
                     wait_str = f"{h:02d}:{m:02d}:{s:02d}"
                 else:
                     wait_str = "NOW"
-                rise = data.get("rise_utc", "")[:19].replace("T", " ")
+                rise_utc = data.get("rise_utc", "")[:19].replace("T", " ")
+                # Convert to Israel time (UTC+3)
+                try:
+                    from datetime import timedelta
+                    rise_il_dt = datetime.fromisoformat(
+                        data["rise_utc"]).astimezone(
+                        timezone(timedelta(hours=3)))
+                    rise_il = rise_il_dt.strftime("%H:%M:%S")
+                except Exception:
+                    rise_il = "?"
                 html += f"""<div class="next">
 <h2>Next pass: {data.get('satellite','')} — {data.get('max_elev',0)}° max elevation</h2>
-<div>Rise: {rise} UTC &nbsp;|&nbsp; In: {wait_str}</div>
+<div>Rise: {rise_utc} UTC &nbsp;|&nbsp; 🇮🇱 {rise_il} IL &nbsp;|&nbsp; In: {wait_str}</div>
 </div>"""
             except Exception:
                 pass

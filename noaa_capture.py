@@ -116,8 +116,17 @@ def capture_pass(sat_name, freq, duration_sec):
 
     log.info(f"Recording {sat_name} — {duration_sec}s → {wav_path.name}")
 
-    # Stop any running SDR service via systemctl signal file
+    # Stop all SDR services that hold the dongle
     Path("/tmp/noaa_capturing").write_text(sat_name)
+    for svc in ["rtl_433", "ais_catcher", "readsb", "tar1090", "auto-rx"]:
+        subprocess.call(["systemctl", "stop", svc],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.call(["pkill", "-f", "rtl_tcp"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.call(["pkill", "-f", "rtl_fm"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1)
+    log.info("SDR released — starting capture")
 
     try:
         # Record raw FM audio with rtl_fm
