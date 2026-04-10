@@ -1,0 +1,12 @@
+[Unit]
+Description=Multimon-NG — POCSAG/FLEX pager decoder
+After=network.target
+
+[Service]
+ExecStartPre=/bin/mkdir -p /var/log/multimon_ng
+ExecStart=/bin/sh -c 'rtl_fm -f 153.350M -s 22050 - | multimon-ng -t raw -a POCSAG512 -a POCSAG1200 -a POCSAG2400 -a FLEX -f alpha - >> /var/log/multimon_ng/pager.log 2>&1'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
