@@ -200,7 +200,7 @@ def get_sdr_menu():
         add("ADS-B", "adsb")
     if shutil.which("rtl_433"):
         add("RTL-433", "rtl433")
-    if shutil.which("rtl_ais"):
+    if shutil.which("AIS-catcher"):
         add("AIS", "ais")
     add("SDR Off", "off")
     modes.append(("< Back", "back"))
@@ -212,7 +212,7 @@ def stop_all_sdr():
     subprocess.call(["pkill", "-f", "rtl_tcp"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     rtl_process = None
-    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "rtl-ais"]:
+    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "ais_catcher"]:
         subprocess.call(["systemctl", "stop", svc],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(0.5)
@@ -235,7 +235,7 @@ def start_sdr(mode):
     elif mode == "rtl433":
         subprocess.call(["systemctl", "start", "rtl_433"])
     elif mode == "ais":
-        subprocess.call(["systemctl", "start", "rtl-ais"])
+        subprocess.call(["systemctl", "start", "ais_catcher"])
     # "off" → stop only (already done above)
 
 def get_adsb_count():
@@ -259,6 +259,19 @@ def get_autorx_status():
         return f"Sonde:{count}" if count else "Scanning..."
     except:
         return "Scanning..."
+
+def get_ais_status():
+    """Return number of vessels seen from AIS-catcher HTTP API."""
+    try:
+        r = subprocess.run(
+            ["curl", "-s", "--max-time", "1",
+             "http://localhost:8424/ships.json"],
+            capture_output=True, text=True)
+        data = json.loads(r.stdout)
+        count = len(data.get("vessels", data if isinstance(data, list) else []))
+        return f"Ships:{count}"
+    except:
+        return "Listening..."
 
 RTL433_LOG = "/var/log/rtl_433/events.json"
 
@@ -497,6 +510,8 @@ def _make_scroll_text():
         return f"{ip}/tar1090"
     elif current_sdr_mode == "rtl433":
         return f"{ip}:8433"
+    elif current_sdr_mode == "ais":
+        return f"{ip}:8424"
     else:
         return ip
 
@@ -512,6 +527,8 @@ def _get_line2_status():
             _status_cache["val"] = get_autorx_status()
         elif current_sdr_mode == "rtl433":
             _status_cache["val"] = get_rtl433_status()
+        elif current_sdr_mode == "ais":
+            _status_cache["val"] = get_ais_status()
         else:
             _status_cache["val"] = ""
         _status_cache["mode"] = current_sdr_mode
@@ -549,7 +566,7 @@ def _draw_idle_frame(bus_ref, scroll_px=0):
         elif current_sdr_mode == "rtl433":
             line2 = pfx + "RTL-433 ON"
         elif current_sdr_mode == "ais":
-            line2 = pfx + "AIS ON"
+            line2 = pfx + "AIS ON  "
         else:
             line2 = pfx + "SDR: OFF"
 

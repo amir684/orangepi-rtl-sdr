@@ -1,0 +1,11 @@
+[Unit]
+Description=AIS-catcher — Ship tracking
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/AIS-catcher -d 0 -N 8424
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
