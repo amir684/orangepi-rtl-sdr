@@ -188,8 +188,19 @@ def capture_pass(sat_name, freq, duration_sec):
             str(wav_path)],
             timeout=120, capture_output=True)
         log.info(f"Image saved: {img_path.name}")
+        # Delete WAV — PNG is all we need
+        try:
+            wav_path.unlink()
+            log.info(f"WAV deleted: {wav_path.name}")
+        except Exception:
+            pass
     except Exception as e:
         log.error(f"Decode error: {e}")
+        # Delete WAV even on decode failure
+        try:
+            wav_path.unlink()
+        except Exception:
+            pass
 
     # Save metadata
     meta = {
