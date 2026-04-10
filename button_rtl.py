@@ -281,6 +281,8 @@ def get_sdr_menu():
         add("NOAA APT", "noaa")
     if shutil.which("multimon-ng"):
         add("Pager", "pager")
+    if shutil.which("acarsdec"):
+        add("ACARS", "acars")
     add("SDR Off", "off")
     modes.append(("< Back", "back"))
     return modes
@@ -291,7 +293,7 @@ def stop_all_sdr():
     subprocess.call(["pkill", "-f", "rtl_tcp"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     rtl_process = None
-    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "ais_catcher", "noaa_capture", "multimon_ng"]:
+    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "ais_catcher", "noaa_capture", "multimon_ng", "acarsdec"]:
         subprocess.call(["systemctl", "stop", svc],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(0.5)
@@ -324,6 +326,8 @@ def start_sdr(mode):
         subprocess.call(["systemctl", "start", "noaa_capture"])
     elif mode == "pager":
         subprocess.call(["systemctl", "start", "multimon_ng"])
+    elif mode == "acars":
+        subprocess.call(["systemctl", "start", "acarsdec"])
     # "off" → stop only (already done above)
 
 def get_adsb_count():
@@ -385,6 +389,7 @@ def get_ais_status():
 
 RTL433_LOG   = "/var/log/rtl_433/events.json"
 MULTIMON_LOG = "/var/log/multimon_ng/pager.log"
+ACARS_LOG    = "/var/log/acarsdec/messages.json"
 
 def get_rtl433_status():
     """Return last decoded device model from JSON log."""
@@ -410,6 +415,36 @@ def get_rtl433_status():
             data = json.loads(line)
             model = data.get("model", "")
             return model[:12] if model else "Listening..."
+    except:
+        return "Listening..."
+
+def get_acars_status():
+    """Return last ACARS message flight+label or count from JSON log."""
+    try:
+        with open(ACARS_LOG, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            if size == 0:
+                return "Listening..."
+            buf = b""
+            pos = size - 1
+            while pos >= 0:
+                f.seek(pos)
+                ch = f.read(1)
+                if ch == b"\n" and buf.strip():
+                    break
+                buf = ch + buf
+                pos -= 1
+            line = buf.strip().decode(errors="ignore")
+            if not line:
+                return "Listening..."
+            data = json.loads(line)
+            flight = data.get("flight", "").strip()
+            label  = data.get("label", "").strip()
+            if flight:
+                return (flight + " " + label)[:14]
+            tail = data.get("tail", "").strip()
+            return (tail + " " + label)[:14] if tail else "Msg rcvd"
     except:
         return "Listening..."
 
@@ -655,6 +690,8 @@ def _make_scroll_text():
         return f"{ip}:8080"
     elif current_sdr_mode == "pager":
         return f"{ip} 153.35M"
+    elif current_sdr_mode == "acars":
+        return f"{ip} 129-131M"
     else:
         return ip
 
@@ -676,6 +713,8 @@ def _get_line2_status():
             _status_cache["val"] = get_noaa_status()
         elif current_sdr_mode == "pager":
             _status_cache["val"] = get_pager_status()
+        elif current_sdr_mode == "acars":
+            _status_cache["val"] = get_acars_status()
         else:
             _status_cache["val"] = ""
         _status_cache["mode"] = current_sdr_mode
@@ -718,6 +757,8 @@ def _draw_idle_frame(bus_ref, scroll_px=0):
             line2 = pfx + "NOAA APT"
         elif current_sdr_mode == "pager":
             line2 = pfx + "Pager ON"
+        elif current_sdr_mode == "acars":
+            line2 = pfx + "ACARS ON"
         else:
             line2 = pfx + "SDR: OFF"
 

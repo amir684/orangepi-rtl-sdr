@@ -1,0 +1,19 @@
+[Unit]
+Description=acarsdec — ACARS aircraft message decoder
+After=network.target
+
+[Service]
+ExecStartPre=/bin/mkdir -p /var/log/acarsdec
+ExecStart=/usr/local/bin/acarsdec \
+    -g 40 \
+    -e \
+    -A \
+    -o 4 \
+    -l /var/log/acarsdec/messages.json \
+    -r 0 \
+    129.125 130.025 130.425 130.450
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
