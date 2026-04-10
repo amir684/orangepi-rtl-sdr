@@ -269,14 +269,14 @@ def get_noaa_status():
     if os.path.exists("/tmp/noaa_capturing"):
         try:
             sat = open("/tmp/noaa_capturing").read().strip()
-            return sat.replace("NOAA-", "N")[:10]
+            return sat.replace("NOAA ", "N")[:10]
         except:
             return "Capturing"
     try:
         with open("/var/lib/noaa-apt/images/next_pass.json") as f:
             data = json.load(f)
         wait = data.get("wait_sec", 0)
-        sat  = data.get("satellite", "").replace("NOAA-", "N")
+        sat  = data.get("satellite", "").replace("NOAA ", "N")
         if wait <= 0:
             return f"{sat} NOW"
         m = wait // 60

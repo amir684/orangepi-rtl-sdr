@@ -27,9 +27,9 @@ LON        = 34.7818    # Station longitude
 ALT        = 30         # Station altitude (meters)
 MIN_ELEV   = 15         # Minimum elevation to record (degrees)
 FREQ = {
-    "NOAA-15": "137.620M",
-    "NOAA-18": "137.9125M",
-    "NOAA-19": "137.100M",
+    "NOAA 15": "137.620M",
+    "NOAA 18": "137.9125M",
+    "NOAA 19": "137.100M",
 }
 IMAGE_DIR  = Path("/var/lib/noaa-apt/images")
 TLE_FILE   = Path("/var/lib/noaa-apt/tle.txt")
@@ -154,11 +154,12 @@ def capture_pass(sat_name, freq, duration_sec):
 
     log.info(f"Decoding {wav_path.name} → {img_path.name}")
     try:
+        # noaa-apt expects "noaa_15", "noaa_18", "noaa_19"
+        sat_arg = sat_name.lower().replace(" ", "_")
         subprocess.run([
             "noaa-apt",
             "-o", str(img_path),
-            "--satellite", sat_name,
-            "--color", "no",
+            "--sat", sat_arg,
             str(wav_path)],
             timeout=120, capture_output=True)
         log.info(f"Image saved: {img_path.name}")
