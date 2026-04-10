@@ -1,0 +1,15 @@
+[Unit]
+Description=RTL-433 — 433MHz sensor decoder
+After=network.target
+
+[Service]
+ExecStartPre=/bin/mkdir -p /var/log/rtl_433
+ExecStart=/usr/bin/rtl_433 \
+    -f 433.92M \
+    -F json:/var/log/rtl_433/events.json \
+    -F http:0.0.0.0:8433
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

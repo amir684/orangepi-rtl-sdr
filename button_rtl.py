@@ -260,6 +260,35 @@ def get_autorx_status():
     except:
         return "Scanning..."
 
+RTL433_LOG = "/var/log/rtl_433/events.json"
+
+def get_rtl433_status():
+    """Return last decoded device model from JSON log."""
+    try:
+        with open(RTL433_LOG, "rb") as f:
+            # Read last non-empty line efficiently
+            f.seek(0, 2)
+            size = f.tell()
+            if size == 0:
+                return "Listening..."
+            buf = b""
+            pos = size - 1
+            while pos >= 0:
+                f.seek(pos)
+                ch = f.read(1)
+                if ch == b"\n" and buf.strip():
+                    break
+                buf = ch + buf
+                pos -= 1
+            line = buf.strip().decode(errors="ignore")
+            if not line:
+                return "Listening..."
+            data = json.loads(line)
+            model = data.get("model", "")
+            return model[:12] if model else "Listening..."
+    except:
+        return "Listening..."
+
 AUTORX_CFG_FILE = "/home/orangepi/radiosonde_auto_rx/auto_rx/station.cfg"
 
 def read_autorx_config():
@@ -466,6 +495,8 @@ def _make_scroll_text():
         return f"{ip}:5000"
     elif current_sdr_mode == "adsb":
         return f"{ip}/tar1090"
+    elif current_sdr_mode == "rtl433":
+        return f"{ip}:8433"
     else:
         return ip
 
@@ -479,6 +510,8 @@ def _get_line2_status():
             _status_cache["val"] = get_adsb_count()
         elif current_sdr_mode == "autorx":
             _status_cache["val"] = get_autorx_status()
+        elif current_sdr_mode == "rtl433":
+            _status_cache["val"] = get_rtl433_status()
         else:
             _status_cache["val"] = ""
         _status_cache["mode"] = current_sdr_mode
