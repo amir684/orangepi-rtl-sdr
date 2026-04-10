@@ -196,10 +196,14 @@ References: [projecthorus/radiosonde_auto_rx](https://github.com/projecthorus/ra
 
 ### RTL-433 — 433MHz sensors / IoT
 
+Decodes temperature sensors, weather stations, door sensors, power meters, and hundreds of other 433 MHz devices. HTTP feed at `http://DEVICE_IP:8433`
+
 ```bash
 sudo apt install -y rtl-433
-sudo systemctl disable rtl_433
-sudo systemctl stop rtl_433
+sudo cp rtl_433.service /lib/systemd/system/rtl_433.service
+sudo mkdir -p /var/log/rtl_433
+sudo systemctl daemon-reload
+sudo systemctl disable rtl_433   # managed by button_rtl.py
 ```
 
 References: [merbanan/rtl_433](https://github.com/merbanan/rtl_433)
@@ -208,25 +212,90 @@ References: [merbanan/rtl_433](https://github.com/merbanan/rtl_433)
 
 ### AIS — Ship tracking
 
+`rtl-ais` is **not available** in apt for arm64 Bookworm. Use **AIS-catcher** instead (build takes ~3 min on OrangePi Zero 2W). Web UI at `http://DEVICE_IP:8424`
+
 ```bash
-sudo apt install -y rtl-ais
-sudo systemctl disable rtl-ais
+sudo apt install -y cmake build-essential librtlsdr-dev libusb-1.0-0-dev \
+    pkg-config libssl-dev libz-dev
+
+git clone --depth=1 https://github.com/jvde-github/AIS-catcher.git /tmp/AIS-catcher
+cd /tmp/AIS-catcher && mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release && make -j2
+sudo cp AIS-catcher /usr/local/bin/
+
+cd / && rm -rf /tmp/AIS-catcher
+
+sudo cp ais_catcher.service /lib/systemd/system/ais_catcher.service
+sudo systemctl daemon-reload
+sudo systemctl disable ais_catcher   # managed by button_rtl.py
 ```
 
-References: [dgiardini/rtl-ais](https://github.com/dgiardini/rtl-ais)
+> **Do NOT use `-d 0`** — it is treated as a serial number, not a device index, and will fail with "cannot find device with SN 0". AIS-catcher picks the first device automatically without the flag.
+
+References: [jvde-github/AIS-catcher](https://github.com/jvde-github/AIS-catcher)
+
+---
+
+### NOAA APT — Satellite images
+
+Receives and decodes live images from NOAA-15, NOAA-18, NOAA-19 weather satellites. Includes automatic pass scheduling and a web image gallery at `http://DEVICE_IP:8080`
+
+```bash
+# Dependencies
+sudo apt install -y sox python3-ephem wget unzip
+
+# noaa-apt arm64 binary
+wget https://github.com/martinber/noaa-apt/releases/download/v1.4.1/noaa-apt-1.4.1-aarch64-linux-gnu-nogui.zip
+unzip noaa-apt-1.4.1-aarch64-linux-gnu-nogui.zip
+sudo cp noaa-apt-1.4.1-aarch64-linux-gnu-nogui/noaa-apt /usr/local/bin/
+sudo chmod +x /usr/local/bin/noaa-apt
+
+# Image output folder
+sudo mkdir -p /var/lib/noaa-apt/images
+sudo chown orangepi:orangepi /var/lib/noaa-apt/images
+
+# Default config (auto_capture=false — only captures when NOAA mode is active)
+sudo tee /etc/noaa_apt.cfg > /dev/null <<'EOF'
+{
+  "auto_capture": false,
+  "min_elev": 15
+}
+EOF
+
+# Install capture scheduler + web gallery
+sudo cp noaa_capture.py /usr/local/bin/noaa_capture.py
+sudo cp noaa_web.py     /usr/local/bin/noaa_web.py
+sudo cp noaa_capture.service /lib/systemd/system/noaa_capture.service
+sudo cp noaa_web.service     /lib/systemd/system/noaa_web.service
+sudo systemctl daemon-reload
+sudo systemctl enable noaa_web    # gallery always available
+sudo systemctl start noaa_web
+sudo systemctl disable noaa_capture   # managed by button_rtl.py
+```
+
+**How it works:**
+
+1. `noaa_capture.py` downloads fresh TLEs from Celestrak and predicts the next pass for each satellite
+2. When a pass starts, it records with `rtl_fm`, converts with `sox`, decodes with `noaa-apt`, saves a PNG — and **deletes the WAV** (WAV files are ~150 MB each)
+3. If `auto_capture = false` (default), it only captures when the device is in **NOAA mode** (selected via the SDR menu) — it won't interrupt ADS-B, AutoRX, or RTL-TCP
+4. If `auto_capture = true`, it captures every pass regardless of the current mode
+5. PNG images are served by `noaa_web.py` — newest first, with next-pass countdown in local time
+
+**Configure from OLED:** Menu → **NOAA Cfg** → toggle Auto Capture / set minimum elevation
+
+References: [martinber/noaa-apt](https://github.com/martinber/noaa-apt) · [Celestrak TLE source](https://celestrak.org/NORAD/elements/gp.php?GROUP=noaa&FORMAT=tle)
 
 ---
 
 ### multimon-ng — POCSAG pagers
 
+Decodes POCSAG and FLEX pager transmissions. Logs to `/var/log/multimon_ng/pager.log`. Default frequency: 153.350 MHz (common in Israel — adjust in `multimon_ng.service` for your region).
+
 ```bash
 sudo apt install -y multimon-ng
-```
-
-Manual usage (pipe from rtl_fm):
-
-```bash
-rtl_fm -f 161.3M -M fm -s 22050 | multimon-ng -t raw -a POCSAG512 -a POCSAG1200 /dev/stdin
+sudo cp multimon_ng.service /lib/systemd/system/multimon_ng.service
+sudo systemctl daemon-reload
+sudo systemctl disable multimon_ng   # managed by button_rtl.py
 ```
 
 References: [EliasOenal/multimon-ng](https://github.com/EliasOenal/multimon-ng)
@@ -237,27 +306,37 @@ References: [EliasOenal/multimon-ng](https://github.com/EliasOenal/multimon-ng)
 
 ```
 Repository:
-├── button_rtl.py        Main controller script
-├── start_ap.sh          Start hostapd + dnsmasq AP
-├── stop_ap.sh           Stop AP and reconnect to WiFi
-├── hostapd_5g.conf      5GHz open AP configuration
-├── button_rtl.service   Systemd unit for auto-start
-├── install.sh           One-shot installer with component prompts
-└── images/              Project photos
+├── button_rtl.py           Main controller script
+├── noaa_capture.py         NOAA APT pass scheduler
+├── noaa_web.py             NOAA APT image gallery (HTTP)
+├── start_ap.sh             Start hostapd + dnsmasq AP
+├── stop_ap.sh              Stop AP and reconnect to WiFi
+├── hostapd_5g.conf         5GHz open AP configuration
+├── install.sh              One-shot installer with component prompts
+├── button_rtl.service      Systemd unit — main controller (auto-start)
+├── auto-rx.service         Systemd unit — AutoRX (managed)
+├── rtl_433.service         Systemd unit — RTL-433 (managed)
+├── ais_catcher.service     Systemd unit — AIS-catcher (managed)
+├── noaa_capture.service    Systemd unit — NOAA scheduler (managed)
+├── noaa_web.service        Systemd unit — NOAA gallery (auto-start)
+├── multimon_ng.service     Systemd unit — pager decoder (managed)
+├── INSTALL_NOTES.md        Hard-won installation knowledge
+└── images/                 Project photos
 
 Installed on device:
 /usr/local/bin/
 ├── button_rtl.py
+├── noaa_capture.py
+├── noaa_web.py
 ├── start_ap.sh
 └── stop_ap.sh
 /etc/hostapd/hostapd_5g.conf
-/etc/systemd/system/button_rtl.service
+/etc/noaa_apt.cfg              (NOAA config: auto_capture, min_elev)
 /etc/button_rtl_brightness     (brightness level, auto-created)
-
-Optional / installed separately:
-/home/orangepi/radiosonde_auto_rx/auto_rx/station.cfg
-/etc/default/readsb
-/lib/systemd/system/auto-rx.service
+/var/lib/noaa-apt/images/      (decoded PNG satellite images)
+/var/log/rtl_433/events.json   (RTL-433 decoded events)
+/var/log/multimon_ng/pager.log (multimon-ng decoded messages)
+/tmp/sdr_mode                  (current mode, read by noaa_capture.py)
 ```
 
 ---
@@ -283,7 +362,11 @@ Line 2: Active mode status · RSSI / aircraft count on right
 | RTL-TCP | `IP:1234` | RSSI |
 | AutoRX | `IP:5000` | Sonde count |
 | ADS-B | `IP/tar1090` | Aircraft count |
-| RTL-433 / AIS / Off | `IP` | — |
+| RTL-433 | `IP:8433` | Last decoded model |
+| AIS | `IP:8424` | Ships seen |
+| NOAA APT | `IP:8080` | Next pass countdown |
+| Pager | `IP 153.35M` | Last decoded message |
+| SDR Off | `IP` | — |
 
 | Button | Action |
 |--------|--------|
@@ -302,8 +385,9 @@ Hold center button for 1 second from the idle screen to open the menu.
 
 | Item | Action |
 |------|--------|
-| SDR Mode | Switch between RTL-TCP / AutoRX / ADS-B / RTL-433 / AIS / Off |
+| SDR Mode | Switch between RTL-TCP / AutoRX / ADS-B / RTL-433 / AIS / NOAA APT / Pager / Off |
 | AutoRX Cfg | Edit station coordinates and callsign on OLED |
+| NOAA Cfg | Toggle auto-capture and set minimum pass elevation |
 | AP Mode | Start 5GHz hotspot |
 | Stop AP | Stop hotspot, reconnect to WiFi |
 | WiFi Mode | Connect to saved or new WiFi network |
@@ -331,8 +415,10 @@ Navigation: **UP/DOWN** scroll · **SEL** confirm · **BACK** cancel
 | RTL-TCP | Raw IQ stream for SDR clients | `DEVICE_IP:1234` |
 | AutoRX | Radiosonde tracking | `http://DEVICE_IP:5000` |
 | ADS-B | Aircraft tracking | `http://DEVICE_IP/tar1090` |
-| RTL-433 | 433MHz sensor decoding | — |
-| AIS | Ship tracking | — |
+| RTL-433 | 433MHz sensor decoding | `http://DEVICE_IP:8433` |
+| AIS | Ship tracking | `http://DEVICE_IP:8424` |
+| NOAA APT | Satellite image capture | `http://DEVICE_IP:8080` |
+| Pager | POCSAG/FLEX decoder | log: `/var/log/multimon_ng/pager.log` |
 | SDR Off | Stop all SDR activity | — |
 
 Only installed modes appear in the menu.
@@ -479,6 +565,9 @@ sudo systemctl status readsb
 | ADS-B "Device busy" on first start | RTL-TCP was running — switch mode via menu to release dongle |
 | tar1090 not loading | Port is **80** at `/tar1090` — not 8080 or 8504 |
 | AutoRX showing wrong map location | Edit station.cfg via OLED menu (Menu → AutoRX Cfg) |
+| AIS "cannot find device with SN 0" | Do not use `-d 0` with AIS-catcher — it is a serial number, not device index |
+| NOAA "No satellites loaded" | Check TLE names in code use space not dash: `"NOAA 15"` not `"NOAA-15"` |
+| NOAA capture never runs | Check `auto_capture` in `/etc/noaa_apt.cfg` — or switch to NOAA mode via menu |
 | Button not responding | Only `PI`-prefix GPIO pins work on this board — `PH` pins fail with EINVAL |
 
 ---

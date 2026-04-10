@@ -27,6 +27,9 @@ ANS_433=${ANS_433:-N}
 read -p "  Install AIS (ship tracking)?                [y/N] " ANS_AIS
 ANS_AIS=${ANS_AIS:-N}
 
+read -p "  Install NOAA APT (satellite images)?        [y/N] " ANS_NOAA
+ANS_NOAA=${ANS_NOAA:-N}
+
 read -p "  Install multimon-ng (POCSAG pagers)?        [y/N] " ANS_PAGER
 ANS_PAGER=${ANS_PAGER:-N}
 
@@ -136,42 +139,111 @@ else
     echo "[6] Skipping rtl_433."
 fi
 
-# ── 7. AIS ────────────────────────────────────────────────
+# ── 7. AIS — AIS-catcher ──────────────────────────────────
+# Note: rtl-ais is NOT in apt for arm64 Bookworm — build AIS-catcher instead
 if [[ "$ANS_AIS" =~ ^[Yy] ]]; then
-    echo "[7] Installing rtl-ais..."
-    sudo apt install -y rtl-ais
-    sudo systemctl disable rtl-ais 2>/dev/null || true
-    echo "[7] AIS installed."
+    echo "[7] Building AIS-catcher from source (~3 min)..."
+    sudo apt install -y cmake build-essential librtlsdr-dev libusb-1.0-0-dev \
+        pkg-config libssl-dev libz-dev
+    rm -rf /tmp/AIS-catcher
+    git clone --depth=1 https://github.com/jvde-github/AIS-catcher.git /tmp/AIS-catcher
+    cd /tmp/AIS-catcher && mkdir build && cd build
+    cmake .. -DCMAKE_BUILD_TYPE=Release && make -j2
+    sudo cp AIS-catcher /usr/local/bin/
+    cd /
+    rm -rf /tmp/AIS-catcher
+    echo "[7] AIS-catcher installed. Web UI will be at http://IP:8424"
 else
     echo "[7] Skipping AIS."
 fi
 
-# ── 8. multimon-ng ────────────────────────────────────────
-if [[ "$ANS_PAGER" =~ ^[Yy] ]]; then
-    echo "[8] Installing multimon-ng..."
-    sudo apt install -y multimon-ng
-    echo "[8] multimon-ng installed."
+# ── 8. NOAA APT ───────────────────────────────────────────
+if [[ "$ANS_NOAA" =~ ^[Yy] ]]; then
+    echo "[8] Installing NOAA APT..."
+    sudo apt install -y sox python3-ephem wget unzip
+
+    echo "[8] Downloading noaa-apt arm64 binary..."
+    NOAA_APT_VER="1.4.1"
+    wget -q "https://github.com/martinber/noaa-apt/releases/download/v${NOAA_APT_VER}/noaa-apt-${NOAA_APT_VER}-aarch64-linux-gnu-nogui.zip" \
+        -O /tmp/noaa-apt.zip
+    unzip -o /tmp/noaa-apt.zip -d /tmp/noaa-apt-bin
+    sudo cp /tmp/noaa-apt-bin/noaa-apt-${NOAA_APT_VER}-aarch64-linux-gnu-nogui/noaa-apt \
+        /usr/local/bin/noaa-apt
+    sudo chmod +x /usr/local/bin/noaa-apt
+    rm -rf /tmp/noaa-apt.zip /tmp/noaa-apt-bin
+
+    sudo mkdir -p /var/lib/noaa-apt/images
+    sudo chown orangepi:orangepi /var/lib/noaa-apt/images
+
+    if [ ! -f /etc/noaa_apt.cfg ]; then
+        sudo tee /etc/noaa_apt.cfg > /dev/null <<'EOF'
+{
+  "auto_capture": false,
+  "min_elev": 15
+}
+EOF
+    fi
+    echo "[8] NOAA APT installed. Web gallery will be at http://IP:8080"
 else
-    echo "[8] Skipping multimon-ng."
+    echo "[8] Skipping NOAA APT."
 fi
 
-# ── 9. Copy scripts ───────────────────────────────────────
-echo "[9] Copying scripts..."
+# ── 9. multimon-ng ────────────────────────────────────────
+if [[ "$ANS_PAGER" =~ ^[Yy] ]]; then
+    echo "[9] Installing multimon-ng..."
+    sudo apt install -y multimon-ng
+    echo "[9] multimon-ng installed."
+else
+    echo "[9] Skipping multimon-ng."
+fi
+
+# ── 10. Copy scripts and service files ────────────────────
+echo "[10] Copying scripts..."
 sudo cp button_rtl.py      /usr/local/bin/button_rtl.py
 sudo cp start_ap.sh        /usr/local/bin/start_ap.sh
 sudo cp stop_ap.sh         /usr/local/bin/stop_ap.sh
 sudo chmod +x /usr/local/bin/start_ap.sh /usr/local/bin/stop_ap.sh
 
-echo "[9] Configuring hostapd..."
+echo "[10] Configuring hostapd..."
 sudo mkdir -p /etc/hostapd
 sudo cp hostapd_5g.conf /etc/hostapd/hostapd_5g.conf
 
-# ── 10. Systemd service ───────────────────────────────────
-echo "[10] Enabling systemd service..."
-sudo cp button_rtl.service /etc/systemd/system/button_rtl.service
+echo "[10] Installing systemd service files..."
+sudo cp button_rtl.service /lib/systemd/system/button_rtl.service
+
+if [[ "$ANS_ADSB" =~ ^[Yy] ]]; then
+    sudo cp auto-rx.service /lib/systemd/system/auto-rx.service 2>/dev/null || true
+fi
+if [[ "$ANS_433" =~ ^[Yy] ]]; then
+    sudo cp rtl_433.service /lib/systemd/system/rtl_433.service
+    sudo mkdir -p /var/log/rtl_433
+fi
+if [[ "$ANS_AIS" =~ ^[Yy] ]]; then
+    sudo cp ais_catcher.service /lib/systemd/system/ais_catcher.service
+fi
+if [[ "$ANS_NOAA" =~ ^[Yy] ]]; then
+    sudo cp noaa_capture.py   /usr/local/bin/noaa_capture.py
+    sudo cp noaa_web.py       /usr/local/bin/noaa_web.py
+    sudo cp noaa_capture.service /lib/systemd/system/noaa_capture.service
+    sudo cp noaa_web.service     /lib/systemd/system/noaa_web.service
+fi
+if [[ "$ANS_PAGER" =~ ^[Yy] ]]; then
+    sudo cp multimon_ng.service /lib/systemd/system/multimon_ng.service
+    sudo mkdir -p /var/log/multimon_ng
+fi
+
+# ── 11. Systemd — enable / start ──────────────────────────
+echo "[11] Enabling systemd services..."
 sudo systemctl daemon-reload
 sudo systemctl enable button_rtl
 sudo systemctl start button_rtl
+
+if [[ "$ANS_NOAA" =~ ^[Yy] ]]; then
+    sudo systemctl enable noaa_web
+    sudo systemctl start noaa_web
+    sudo systemctl disable noaa_capture 2>/dev/null || true
+    sudo systemctl stop noaa_capture 2>/dev/null || true
+fi
 
 # ── Done ──────────────────────────────────────────────────
 echo ""
