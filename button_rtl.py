@@ -59,7 +59,43 @@ _scroll_state   = "pause_start"   # pause_start | scrolling | pause_end
 _scroll_pause   = 30
 _status_cache   = {"val": "", "mode": "", "ts": 0.0}
 
-AUTORX_CFG_ITEMS = ["Latitude", "Longitude", "Altitude", "Callsign", "< Back"]
+AUTORX_TOGGLE_FIELDS = [
+    # (menu label prefix,  cfg_field_name)
+    ("SondeHub",    "sondehub_enabled"),
+    ("Upload Pos",  "upload_listener_position"),
+    ("APRS",        "aprs_enabled"),
+    ("APRS Beacon", "station_beacon_enabled"),
+    ("GPSD",        "gpsd_enabled"),
+]
+
+def _autorx_cfg_items():
+    """Build AutoRX Cfg menu with live ON/OFF values for toggle fields."""
+    items = ["Latitude", "Longitude", "Altitude", "Callsign"]
+    for label, field in AUTORX_TOGGLE_FIELDS:
+        val = _read_autorx_bool(field)
+        items.append(f"{label}:{'ON' if val else 'OFF'}")
+    items.append("< Back")
+    return items
+
+def _read_autorx_bool(field):
+    """Read a True/False field from station.cfg."""
+    try:
+        with open(AUTORX_CFG_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(field) and '=' in line:
+                    val = line.split('=', 1)[1].strip().split('#')[0].strip()
+                    return val.lower() == 'true'
+    except Exception:
+        pass
+    return False
+
+def _toggle_autorx_bool(field):
+    """Toggle a True/False field in station.cfg and return new value."""
+    current = _read_autorx_bool(field)
+    new_val = "False" if current else "True"
+    save_autorx_field(field, new_val)
+    return not current
 
 NOAA_CFG_FILE  = "/etc/noaa_apt.cfg"
 noaa_cfg_idx   = 0   # cursor in NOAA Cfg menu
@@ -841,7 +877,7 @@ while True:
                     show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
                 else:
                     cfg_menu_idx = 0
-                    show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+                    show_menu(bus, "AutoRX Cfg", _autorx_cfg_items(), cfg_menu_idx)
                     state = "autorx_config"
             elif choice == "NOAA Cfg":
                 noaa_cfg_idx = 0
@@ -892,13 +928,13 @@ while True:
     elif state == "autorx_config":
         if GPIO.input(BTN_UP) == GPIO.LOW:
             time.sleep(0.05)
-            cfg_menu_idx = (cfg_menu_idx - 1) % len(AUTORX_CFG_ITEMS)
-            show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+            cfg_menu_idx = (cfg_menu_idx - 1) % len(_autorx_cfg_items())
+            show_menu(bus, "AutoRX Cfg", _autorx_cfg_items(), cfg_menu_idx)
             wait_release(BTN_UP)
         elif GPIO.input(BTN_DOWN) == GPIO.LOW:
             time.sleep(0.05)
-            cfg_menu_idx = (cfg_menu_idx + 1) % len(AUTORX_CFG_ITEMS)
-            show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+            cfg_menu_idx = (cfg_menu_idx + 1) % len(_autorx_cfg_items())
+            show_menu(bus, "AutoRX Cfg", _autorx_cfg_items(), cfg_menu_idx)
             wait_release(BTN_DOWN)
         elif GPIO.input(BTN_BACK) == GPIO.LOW:
             time.sleep(0.05)
@@ -907,7 +943,7 @@ while True:
             wait_release(BTN_BACK)
         elif GPIO.input(BTN_SEL) == GPIO.LOW:
             wait_release(BTN_SEL)
-            choice = AUTORX_CFG_ITEMS[cfg_menu_idx]
+            choice = _autorx_cfg_items()[cfg_menu_idx]
             lat, lon, alt, cs = read_autorx_config()
             if choice == "Latitude":
                 cfg_edit_field = "lat"
@@ -931,6 +967,16 @@ while True:
             elif choice == "< Back":
                 state = "menu"; menu_idx = 0
                 show_menu(bus, "-- MENU --", MENU_ITEMS, menu_idx)
+            else:
+                # Toggle fields: "SondeHub:ON", "Upload Pos:OFF", etc.
+                for label, field in AUTORX_TOGGLE_FIELDS:
+                    if choice.startswith(label + ":"):
+                        new_val = _toggle_autorx_bool(field)
+                        lbl = f"{label}: {'ON' if new_val else 'OFF'}"
+                        show(bus, lbl, "Saved!")
+                        time.sleep(1)
+                        show_menu(bus, "AutoRX Cfg", _autorx_cfg_items(), cfg_menu_idx)
+                        break
 
     # ── AUTORX COORD EDIT ─────────────────────────────────
     elif state == "autorx_edit_coord":
@@ -954,14 +1000,14 @@ while True:
             else:
                 wait_release(BTN_BACK)
                 state = "autorx_config"
-                show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+                show_menu(bus, "AutoRX Cfg", _autorx_cfg_items(), cfg_menu_idx)
         elif GPIO.input(BTN_SEL) == GPIO.LOW:
             wait_release(BTN_SEL)
             _coord_save()
             show(bus, "Saved!", "".join(cfg_edit_chars))
             time.sleep(1)
             state = "autorx_config"
-            show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+            show_menu(bus, "AutoRX Cfg", _autorx_cfg_items(), cfg_menu_idx)
 
     # ── AUTORX CALLSIGN EDIT ──────────────────────────────
     elif state == "autorx_edit_call":
@@ -980,7 +1026,7 @@ while True:
                 _show_call_edit()
             else:
                 state = "autorx_config"
-                show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+                show_menu(bus, "AutoRX Cfg", _autorx_cfg_items(), cfg_menu_idx)
             wait_release(BTN_BACK)
         elif GPIO.input(BTN_SEL) == GPIO.LOW:
             wait_release(BTN_SEL)
@@ -995,7 +1041,7 @@ while True:
                     show(bus, "Saved!", "".join(cfg_call_chars))
                     time.sleep(1)
                     state = "autorx_config"
-                    show_menu(bus, "AutoRX Cfg", AUTORX_CFG_ITEMS, cfg_menu_idx)
+                    show_menu(bus, "AutoRX Cfg", _autorx_cfg_items(), cfg_menu_idx)
             else:
                 if len(cfg_call_chars) < 8:
                     cfg_call_chars.append(ch)
