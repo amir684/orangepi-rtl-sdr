@@ -3,6 +3,8 @@
 A fully standalone **multi-mode SDR server** running on an **Orange Pi Zero 2W**, controlled via a 5-direction digital joystick and a 128×32 OLED display.  
 Switch between RTL-TCP, ADS-B, Radiosonde tracking, RTL-433, AIS, and more — all from the device itself, no keyboard or screen required.
 
+![Device idle screen showing IP, RTL status and RSSI](images/20260410_000243.jpg)
+
 ---
 
 ## Features
@@ -15,7 +17,7 @@ Switch between RTL-TCP, ADS-B, Radiosonde tracking, RTL-433, AIS, and more — a
 | **RTL-433** | 433MHz sensors / IoT devices |
 | **AIS** | Ship tracking |
 | **POCSAG pagers** | multimon-ng (optional) |
-| **128×32 OLED UI** | IP, mode status, frequency, CPU temp, RSSI |
+| **128×32 OLED UI** | IP:port, mode status, frequency, CPU temp, RSSI |
 | **5-direction joystick** | Navigate menus, switch modes, configure settings |
 | **WiFi management** | Connect to saved or new networks via on-screen password entry |
 | **5GHz AP mode** | Open hotspot (`OrangePi-SDR`) — browse SDR feeds in the field |
@@ -34,6 +36,8 @@ Switch between RTL-TCP, ADS-B, Radiosonde tracking, RTL-433, AIS, and more — a
 | SDR Dongle | RTL-SDR (any RTL2832U-based) via USB |
 | Display | SSD1306 128×32 OLED — I2C bus 2, address `0x3C` |
 | Joystick | 5-direction digital joystick (active LOW, internal pull-up) |
+
+![Board top view](images/20260410_000306.jpg)
 
 ### Joystick Wiring
 
@@ -56,6 +60,8 @@ Switch between RTL-TCP, ADS-B, Radiosonde tracking, RTL-433, AIS, and more — a
 | GND | GND |
 | SDA | PI7 (I2C-3 SDA) |
 | SCL | PI8 (I2C-3 SCL) |
+
+![Board side view with USB and power](images/20260410_000256.jpg)
 
 ---
 
@@ -132,9 +138,7 @@ EXTRA_OPTIONS=""
 EOF
 ```
 
-References:
-- [wiedehopf/readsb](https://github.com/wiedehopf/readsb)
-- [wiedehopf/tar1090](https://github.com/wiedehopf/tar1090)
+References: [wiedehopf/readsb](https://github.com/wiedehopf/readsb) · [wiedehopf/tar1090](https://github.com/wiedehopf/tar1090)
 
 ---
 
@@ -186,14 +190,11 @@ sudo systemctl disable auto-rx   # managed by button_rtl.py
 
 Set your station coordinates in `station.cfg` — or use the **OLED config editor** (Menu → AutoRX Cfg).
 
-References:
-- [projecthorus/radiosonde_auto_rx](https://github.com/projecthorus/radiosonde_auto_rx)
+References: [projecthorus/radiosonde_auto_rx](https://github.com/projecthorus/radiosonde_auto_rx)
 
 ---
 
 ### RTL-433 — 433MHz sensors / IoT
-
-Decodes weather stations, door sensors, power meters, and hundreds of other 433MHz devices.
 
 ```bash
 sudo apt install -y rtl-433
@@ -201,41 +202,34 @@ sudo systemctl disable rtl_433
 sudo systemctl stop rtl_433
 ```
 
-References:
-- [merbanan/rtl_433](https://github.com/merbanan/rtl_433)
+References: [merbanan/rtl_433](https://github.com/merbanan/rtl_433)
 
 ---
 
 ### AIS — Ship tracking
-
-Decodes AIS signals from ships. Feed into OpenCPN or similar.
 
 ```bash
 sudo apt install -y rtl-ais
 sudo systemctl disable rtl-ais
 ```
 
-References:
-- [dgiardini/rtl-ais](https://github.com/dgiardini/rtl-ais)
+References: [dgiardini/rtl-ais](https://github.com/dgiardini/rtl-ais)
 
 ---
 
 ### multimon-ng — POCSAG pagers
 
-Decodes pager messages (POCSAG, FLEX, DTMF, etc.)
-
 ```bash
 sudo apt install -y multimon-ng
 ```
 
-Usage example (manual, pipe from rtl_fm):
+Manual usage (pipe from rtl_fm):
 
 ```bash
 rtl_fm -f 161.3M -M fm -s 22050 | multimon-ng -t raw -a POCSAG512 -a POCSAG1200 /dev/stdin
 ```
 
-References:
-- [EliasOenal/multimon-ng](https://github.com/EliasOenal/multimon-ng)
+References: [EliasOenal/multimon-ng](https://github.com/EliasOenal/multimon-ng)
 
 ---
 
@@ -248,7 +242,8 @@ Repository:
 ├── stop_ap.sh           Stop AP and reconnect to WiFi
 ├── hostapd_5g.conf      5GHz open AP configuration
 ├── button_rtl.service   Systemd unit for auto-start
-└── install.sh           One-shot installer with component prompts
+├── install.sh           One-shot installer with component prompts
+└── images/              Project photos
 
 Installed on device:
 /usr/local/bin/
@@ -271,17 +266,28 @@ Optional / installed separately:
 
 ### Idle Screen
 
+The idle screen scrolls the IP address with port/path so you always know the exact URL to connect to.
+
+![Idle screen: IP:port, RTL status, CPU temp, RSSI](images/20260410_000243.jpg)
+
 ```
-192.168.1.XXX          51C
-RTL: OFF            -65dBm
+192.168.1.221:1234     46C
+RTL: ON             -62dBm
 ```
 
-Line 1: IP address (left) + CPU temp (right)  
-Line 2: Active mode status (left) + RSSI or aircraft count (right)
+Line 1: IP + port/path (scrolls if too long) · CPU temp fixed on right  
+Line 2: Active mode status · RSSI / aircraft count on right
+
+| Mode | Line 1 address | Line 2 right |
+|------|---------------|-------------|
+| RTL-TCP | `IP:1234` | RSSI |
+| AutoRX | `IP:5000` | Sonde count |
+| ADS-B | `IP/tar1090` | Aircraft count |
+| RTL-433 / AIS / Off | `IP` | — |
 
 | Button | Action |
 |--------|--------|
-| BTN_UP | Toggle RTL-TCP ON / OFF (when in RTL-TCP mode) |
+| BTN_UP | Toggle RTL-TCP ON / OFF |
 | BTN_RIGHT | Toggle RTL-TCP ON / OFF |
 | BTN_SEL (hold 1s) | Open main menu |
 
@@ -289,10 +295,10 @@ Line 2: Active mode status (left) + RSSI or aircraft count (right)
 
 ### Main Menu
 
-```
--- MENU --
-> SDR Mode
-```
+Hold center button for 1 second from the idle screen to open the menu.
+
+![Main menu — SDR Mode selected](images/20260410_000454.jpg)  
+![Main menu — AP Mode selected](images/20260410_000330.jpg)
 
 | Item | Action |
 |------|--------|
@@ -305,15 +311,17 @@ Line 2: Active mode status (left) + RSSI or aircraft count (right)
 | Power Off | Safe shutdown |
 | < Back | Return to idle |
 
-Navigation: **UP/DOWN** scroll, **SEL** confirm, **BACK** cancel
+Navigation: **UP/DOWN** scroll · **SEL** confirm · **BACK** cancel
 
 ---
 
 ### SDR Mode Selection
 
+![SDR Mode menu — RTL-TCP active](images/20260410_000443.jpg)
+
 ```
 -- SDR Mode --
->*RTL-TCP
+> *RTL-TCP
 ```
 
 `*` marks the currently active mode. Selecting a mode stops all running SDR services and starts the chosen one. The dongle is exclusive — only one mode runs at a time.
@@ -334,6 +342,8 @@ Only installed modes appear in the menu.
 ### AutoRX Station Config Editor
 
 Edit your station's GPS coordinates and callsign directly from the OLED — no SSH needed.
+
+![Menu — AutoRX Cfg selected](images/20260410_000504.jpg)
 
 Menu → **AutoRX Cfg** → choose field:
 
@@ -391,7 +401,7 @@ Brightness
 
 ### AP Mode
 
-Starts a 5GHz open hotspot. Idle screen changes to:
+Starts a 5GHz open hotspot — useful in the field when there's no WiFi.
 
 ```
 192.168.100.1          51C
