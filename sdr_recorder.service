@@ -1,0 +1,12 @@
+[Unit]
+Description=SDR Scanner Recorder — VOX-triggered recording
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/sdr_recorder.py
+Restart=on-failure
+RestartSec=5
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target

@@ -283,6 +283,8 @@ def get_sdr_menu():
         add("Pager", "pager")
     if shutil.which("acarsdec"):
         add("ACARS", "acars")
+    if os.path.exists("/usr/local/bin/sdr_recorder.py"):
+        add("Scanner", "scanner")
     add("SDR Off", "off")
     modes.append(("< Back", "back"))
     return modes
@@ -293,7 +295,7 @@ def stop_all_sdr():
     subprocess.call(["pkill", "-f", "rtl_tcp"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     rtl_process = None
-    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "ais_catcher", "noaa_capture", "multimon_ng", "acarsdec"]:
+    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "ais_catcher", "noaa_capture", "multimon_ng", "acarsdec", "sdr_recorder"]:
         subprocess.call(["systemctl", "stop", svc],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(0.5)
@@ -328,6 +330,8 @@ def start_sdr(mode):
         subprocess.call(["systemctl", "start", "multimon_ng"])
     elif mode == "acars":
         subprocess.call(["systemctl", "start", "acarsdec"])
+    elif mode == "scanner":
+        subprocess.call(["systemctl", "start", "sdr_recorder"])
     # "off" → stop only (already done above)
 
 def get_adsb_count():
@@ -417,6 +421,20 @@ def get_rtl433_status():
             return model[:12] if model else "Listening..."
     except:
         return "Listening..."
+
+def get_scanner_status():
+    """Return current scanner state from status file."""
+    try:
+        data  = json.loads(open("/tmp/sdr_recorder_status.json").read())
+        state = data.get("state", "idle")
+        freq  = data.get("frequency", "")
+        if state == "recording":
+            return "REC " + freq
+        elif state == "listening":
+            return "Lstn " + freq
+        return "Scanner OFF"
+    except Exception:
+        return "Scanner OFF"
 
 def get_acars_status():
     """Return last ACARS message flight+label or count from JSON log."""
@@ -692,6 +710,8 @@ def _make_scroll_text():
         return f"{ip} 153.35M"
     elif current_sdr_mode == "acars":
         return f"{ip}:8081"
+    elif current_sdr_mode == "scanner":
+        return f"{ip}:8082"
     else:
         return ip
 
@@ -715,6 +735,8 @@ def _get_line2_status():
             _status_cache["val"] = get_pager_status()
         elif current_sdr_mode == "acars":
             _status_cache["val"] = get_acars_status()
+        elif current_sdr_mode == "scanner":
+            _status_cache["val"] = get_scanner_status()
         else:
             _status_cache["val"] = ""
         _status_cache["mode"] = current_sdr_mode
@@ -759,6 +781,8 @@ def _draw_idle_frame(bus_ref, scroll_px=0):
             line2 = pfx + "Pager ON"
         elif current_sdr_mode == "acars":
             line2 = pfx + "ACARS ON"
+        elif current_sdr_mode == "scanner":
+            line2 = pfx + "Scanner"
         else:
             line2 = pfx + "SDR: OFF"
 
