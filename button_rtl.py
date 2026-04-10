@@ -691,7 +691,7 @@ def _make_scroll_text():
     elif current_sdr_mode == "pager":
         return f"{ip} 153.35M"
     elif current_sdr_mode == "acars":
-        return f"{ip} 129-131M"
+        return f"{ip}:8081"
     else:
         return ip
 

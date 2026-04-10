@@ -1,0 +1,12 @@
+[Unit]
+Description=ACARS Web UI
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/acars_web.py
+Restart=on-failure
+RestartSec=5
+User=orangepi
+
+[Install]
+WantedBy=multi-user.target
