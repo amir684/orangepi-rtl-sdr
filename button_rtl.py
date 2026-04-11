@@ -1043,10 +1043,7 @@ while True:
                 refresh_idle()
             elif choice == "WiFi Mode":
                 state = "idle"
-                start_wifi_portal()
-                show(bus, "WiFi Setup", "Connect to:")
-                time.sleep(1)
-                show(bus, "OrangePi-SDR", "→ 192.168.100.1")
+                threading.Thread(target=start_wifi_portal, daemon=True).start()
             elif choice == "Brightness":
                 state = "brightness"
                 _show_brightness()
