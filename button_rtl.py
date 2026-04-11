@@ -635,11 +635,13 @@ def connect_known(ssid):
 
 _portal_thread  = None
 _portal_stop    = None
+_oled_locked    = False   # when True, scroll thread stops drawing
 
 def start_wifi_portal():
     """Start AP + wifi_portal.py web server, monitor for completion."""
-    global _portal_thread, _portal_stop, ap_running
+    global _portal_thread, _portal_stop, ap_running, _oled_locked
     import importlib.util
+    _oled_locked = True   # pause scroll thread while we own the display
     # Stop lighttpd so port 80 is free for our portal
     subprocess.call(["systemctl", "stop", "lighttpd"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -668,7 +670,7 @@ def start_wifi_portal():
     _portal_thread.start()
     # Monitor for done signal (written by portal after successful connect)
     def _monitor():
-        global ap_running
+        global ap_running, _oled_locked
         done_file = Path("/tmp/wifi_portal_done")
         # OLED: blink between two lines while waiting
         msgs = ["WiFi Setup", "Waiting..."]
@@ -685,6 +687,7 @@ def start_wifi_portal():
                 done_file.unlink(missing_ok=True)
                 show(bus, "WiFi connected!", "Reconnect now")
                 time.sleep(3)
+                _oled_locked = False
                 refresh_idle()
                 return
             # Update OLED every 2s
@@ -693,6 +696,7 @@ def start_wifi_portal():
                      "192.168.100.1")
             time.sleep(0.5)
         # Timeout — leave AP running, user can stop from menu
+        _oled_locked = False
     threading.Thread(target=_monitor, daemon=True).start()
 
 def connect_new(ssid, pwd):
@@ -871,7 +875,7 @@ def _idle_scroll_thread(bus_ref):
     PAUSE = 30  # frames at each end (~2.4s at 12fps)
 
     while True:
-        if state != "idle":
+        if _oled_locked or state != "idle":
             time.sleep(0.2)
             _scroll_offset = 0
             _scroll_state  = "pause_start"
@@ -1036,7 +1040,8 @@ while True:
                 stop_ap()
                 subprocess.call(["systemctl", "start", "lighttpd"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                ap_running = False
+                ap_running   = False
+                _oled_locked = False
                 MENU_ITEMS[:] = MENU_ITEMS_IDLE
                 state = "idle"
                 time.sleep(2)
