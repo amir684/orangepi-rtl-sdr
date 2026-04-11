@@ -638,14 +638,25 @@ _portal_stop    = None
 
 def start_wifi_portal():
     """Start AP + wifi_portal.py web server, monitor for completion."""
-    global _portal_thread, _portal_stop
-    import importlib.util, threading
+    global _portal_thread, _portal_stop, ap_running
+    import importlib.util
+    # Stop lighttpd so port 80 is free for our portal
+    subprocess.call(["systemctl", "stop", "lighttpd"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.5)
     # Start the AP
     if not start_ap():
+        subprocess.call(["systemctl", "start", "lighttpd"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         show(bus, "AP Failed!", "")
         time.sleep(2)
         return
-    show(bus, "WiFi Setup", "192.168.100.1")
+    ap_running = True
+    MENU_ITEMS[:] = MENU_ITEMS_AP
+    # Show OLED instructions
+    show(bus, "Join WiFi:", "OrangePi-SDR")
+    time.sleep(2)
+    show(bus, "Then open:", "192.168.100.1")
     # Run portal in background thread
     _portal_stop = threading.Event()
     spec = importlib.util.spec_from_file_location(
@@ -657,20 +668,31 @@ def start_wifi_portal():
     _portal_thread.start()
     # Monitor for done signal (written by portal after successful connect)
     def _monitor():
+        global ap_running
         done_file = Path("/tmp/wifi_portal_done")
-        for _ in range(120):   # wait up to 60s
+        # OLED: blink between two lines while waiting
+        msgs = ["WiFi Setup", "Waiting..."]
+        i = 0
+        for _ in range(240):   # wait up to 120s
             if done_file.exists():
-                time.sleep(2)  # let nmcli finish
                 _portal_stop.set()
                 time.sleep(1)
                 stop_ap()
+                subprocess.call(["systemctl", "start", "lighttpd"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                ap_running = False
+                MENU_ITEMS[:] = MENU_ITEMS_IDLE
                 done_file.unlink(missing_ok=True)
-                show(bus, "WiFi connected!", "")
-                time.sleep(2)
+                show(bus, "WiFi connected!", "Reconnect now")
+                time.sleep(3)
                 refresh_idle()
                 return
+            # Update OLED every 2s
+            if _ % 4 == 0:
+                show(bus, "WiFi Setup " + ("." * ((_ // 4 % 3) + 1)),
+                     "192.168.100.1")
             time.sleep(0.5)
-        # Timeout — user can manually stop AP from menu
+        # Timeout — leave AP running, user can stop from menu
     threading.Thread(target=_monitor, daemon=True).start()
 
 def connect_new(ssid, pwd):
@@ -1009,7 +1031,11 @@ while True:
                     refresh_idle()
             elif choice == "Stop AP":
                 show(bus, "Stopping AP...", "")
+                if _portal_stop:
+                    _portal_stop.set()
                 stop_ap()
+                subprocess.call(["systemctl", "start", "lighttpd"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 ap_running = False
                 MENU_ITEMS[:] = MENU_ITEMS_IDLE
                 state = "idle"
