@@ -24,8 +24,8 @@ DEFAULT_CFG = {
     "gain":           40,
     "max_recordings": 50,
     "min_duration":   1.0,
-    "silence_dur":    1.2,
-    "silence_thresh": "2%",
+    "silence_dur":    1.5,
+    "vox_threshold":  500,
 }
 
 MODES = ["fm", "am", "wbfm", "lsb", "usb"]
@@ -52,8 +52,15 @@ def load_status():
 
 
 def reload_recorder():
-    """Send SIGUSR1 via systemctl reload — triggers config reload in daemon."""
     subprocess.call(["systemctl", "reload-or-restart", "sdr_recorder"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def stop_recorder():
+    subprocess.call(["systemctl", "stop", "sdr_recorder"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def start_recorder():
+    subprocess.call(["systemctl", "start", "sdr_recorder"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -193,12 +200,16 @@ audio{height:28px;width:100%;max-width:320px;filter:invert(1) hue-rotate(180deg)
     <input id="cfg-sildur" name="silence_dur" type="number" min="0.3" max="10" step="0.1">
   </div>
   <div class="field">
-    <label>Silence threshold (%)</label>
-    <input id="cfg-silth" name="silence_thresh" placeholder="2%">
+    <label>VOX threshold (RMS 0-32768)</label>
+    <input id="cfg-vox" name="vox_threshold" type="number" min="50" max="10000">
   </div>
 </div>
-<button type="submit" class="btn btn-primary">Save &amp; Apply</button>
-<span class="saved-msg" id="saved-msg">✔ Saved — recorder restarting…</span>
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  <button type="submit" class="btn btn-primary">Save &amp; Apply</button>
+  <button type="button" class="btn btn-danger" onclick="ctrlRecorder('stop')">⬛ Stop</button>
+  <button type="button" class="btn btn-primary" style="border-color:#0f0;color:#0f0" onclick="ctrlRecorder('start')">▶ Start</button>
+  <span class="saved-msg" id="saved-msg">✔ Saved — recorder restarting…</span>
+</div>
 </form>
 
 <!-- Recordings -->
@@ -224,8 +235,8 @@ async function loadCfg() {
   document.getElementById('cfg-gain').value   = cfg.gain            ?? 40;
   document.getElementById('cfg-max').value    = cfg.max_recordings  ?? 50;
   document.getElementById('cfg-mindur').value = cfg.min_duration    ?? 1.0;
-  document.getElementById('cfg-sildur').value = cfg.silence_dur     ?? 1.2;
-  document.getElementById('cfg-silth').value  = cfg.silence_thresh  || '2%';
+  document.getElementById('cfg-sildur').value = cfg.silence_dur     ?? 1.5;
+  document.getElementById('cfg-vox').value    = cfg.vox_threshold   ?? 500;
 }
 
 async function saveCfg(e) {
@@ -238,7 +249,7 @@ async function saveCfg(e) {
     max_recordings: parseInt(document.getElementById('cfg-max').value),
     min_duration:   parseFloat(document.getElementById('cfg-mindur').value),
     silence_dur:    parseFloat(document.getElementById('cfg-sildur').value),
-    silence_thresh: document.getElementById('cfg-silth').value.trim(),
+    vox_threshold:  parseInt(document.getElementById('cfg-vox').value),
   };
   await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
   const msg = document.getElementById('saved-msg');
@@ -300,6 +311,13 @@ async function deleteRec(name) {
   loadRecordings();
 }
 
+async function ctrlRecorder(action) {
+  await fetch('/api/control', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action})});
+  setTimeout(loadStatus, 1000);
+}
+
 loadCfg();
 loadStatus();
 loadRecordings();
@@ -346,6 +364,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True})
             except Exception as e:
                 self.send_json({"ok": False, "error": str(e)})
+        elif path == "/api/control":
+            length = int(self.headers.get("Content-Length", 0))
+            body   = self.rfile.read(length)
+            action = json.loads(body).get("action", "")
+            if action == "stop":
+                stop_recorder()
+            elif action == "start":
+                start_recorder()
+            self.send_json({"ok": True})
         elif path == "/api/delete":
             qs   = parse_qs(p.query)
             name = qs.get("name", [""])[0]
