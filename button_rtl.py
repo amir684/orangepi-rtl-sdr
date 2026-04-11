@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+from pathlib import Path
 import json
 import socket
 import time
@@ -632,6 +633,46 @@ def connect_known(ssid):
                        capture_output=True, text=True, timeout=20)
     return r.returncode == 0
 
+_portal_thread  = None
+_portal_stop    = None
+
+def start_wifi_portal():
+    """Start AP + wifi_portal.py web server, monitor for completion."""
+    global _portal_thread, _portal_stop
+    import importlib.util, threading
+    # Start the AP
+    if not start_ap():
+        show(bus, "AP Failed!", "")
+        time.sleep(2)
+        return
+    show(bus, "WiFi Setup", "192.168.100.1")
+    # Run portal in background thread
+    _portal_stop = threading.Event()
+    spec = importlib.util.spec_from_file_location(
+        "wifi_portal", "/usr/local/bin/wifi_portal.py")
+    mod  = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    _portal_thread = threading.Thread(
+        target=mod.run, args=(_portal_stop,), daemon=True)
+    _portal_thread.start()
+    # Monitor for done signal (written by portal after successful connect)
+    def _monitor():
+        done_file = Path("/tmp/wifi_portal_done")
+        for _ in range(120):   # wait up to 60s
+            if done_file.exists():
+                time.sleep(2)  # let nmcli finish
+                _portal_stop.set()
+                time.sleep(1)
+                stop_ap()
+                done_file.unlink(missing_ok=True)
+                show(bus, "WiFi connected!", "")
+                time.sleep(2)
+                refresh_idle()
+                return
+            time.sleep(0.5)
+        # Timeout — user can manually stop AP from menu
+    threading.Thread(target=_monitor, daemon=True).start()
+
 def connect_new(ssid, pwd):
     # remove old profile if exists
     subprocess.run(["nmcli","con","delete", ssid], capture_output=True)
@@ -975,9 +1016,11 @@ while True:
                 time.sleep(2)
                 refresh_idle()
             elif choice == "WiFi Mode":
-                state = "wifi_menu"
-                menu_idx = 0
-                show_menu(bus, "-- WiFi --", WIFI_ITEMS, menu_idx)
+                state = "idle"
+                start_wifi_portal()
+                show(bus, "WiFi Setup", "Connect to:")
+                time.sleep(1)
+                show(bus, "OrangePi-SDR", "→ 192.168.100.1")
             elif choice == "Brightness":
                 state = "brightness"
                 _show_brightness()
