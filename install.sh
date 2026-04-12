@@ -248,14 +248,6 @@ if [[ "$ANS_NOAA" =~ ^[Yy] ]]; then
     sudo systemctl stop noaa_capture 2>/dev/null || true
 fi
 
-# ── Fix config file ownership (web services run as orangepi) ──
-for cfg in /etc/sdr_recorder.cfg /etc/noaa_apt.cfg; do
-    if [ ! -f "$cfg" ]; then
-        echo "{}" | sudo tee "$cfg" > /dev/null
-    fi
-    sudo chown orangepi:orangepi "$cfg"
-done
-
 # ── Done ──────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════╗"
