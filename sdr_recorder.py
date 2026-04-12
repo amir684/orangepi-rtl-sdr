@@ -154,13 +154,16 @@ def record_loop():
                  f"gain={gain} vox={vox_thr}")
         set_state("listening")
 
+        # Always pass squelch=0 to rtl_fm — let VOX/RMS threshold do the gating.
+        # rtl_fm's built-in squelch (-l) suppresses output entirely in wbfm/am
+        # modes which breaks RMS detection. VOX threshold handles noise gating.
         rtl_cmd = [
             "rtl_fm",
             "-f", freq,
             "-M", mode,
             "-s", str(rate),
             "-g", str(gain),
-            "-l", str(squelch),
+            "-l", "0",
             "-",
         ]
 
