@@ -155,17 +155,29 @@ def record_loop():
         set_state("listening")
 
         # Always pass squelch=0 to rtl_fm — let VOX/RMS threshold do the gating.
-        # rtl_fm's built-in squelch (-l) suppresses output entirely in wbfm/am
-        # modes which breaks RMS detection. VOX threshold handles noise gating.
-        rtl_cmd = [
-            "rtl_fm",
-            "-f", freq,
-            "-M", mode,
-            "-s", str(rate),
-            "-g", str(gain),
-            "-l", "0",
-            "-",
-        ]
+        # wbfm requires a high capture rate (200kHz+) with -r to resample output.
+        # Using -s 24000 directly with wbfm gives all-zero output.
+        if mode == "wbfm":
+            rtl_cmd = [
+                "rtl_fm",
+                "-f", freq,
+                "-M", "wbfm",
+                "-s", "200000",
+                "-r", str(rate),
+                "-g", str(gain),
+                "-l", "0",
+                "-",
+            ]
+        else:
+            rtl_cmd = [
+                "rtl_fm",
+                "-f", freq,
+                "-M", mode,
+                "-s", str(rate),
+                "-g", str(gain),
+                "-l", "0",
+                "-",
+            ]
 
         try:
             _rtl_proc = subprocess.Popen(
