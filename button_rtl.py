@@ -159,8 +159,8 @@ def _save_brightness(level):
 
 oled_brightness = _load_brightness()
 
-MENU_ITEMS_IDLE = ["SDR Mode", "AutoRX Cfg", "NOAA Cfg", "AP Mode", "WiFi Mode", "Brightness", "Power Off", "< Back"]
-MENU_ITEMS_AP   = ["SDR Mode", "AutoRX Cfg", "NOAA Cfg", "Stop AP", "WiFi Mode", "Brightness", "Power Off", "< Back"]
+MENU_ITEMS_IDLE = ["SDR Mode", "AutoRX Cfg", "NOAA Cfg", "AP Mode", "WiFi Mode", "Config Portal", "Brightness", "Power Off", "< Back"]
+MENU_ITEMS_AP   = ["SDR Mode", "AutoRX Cfg", "NOAA Cfg", "Stop AP", "WiFi Mode", "Config Portal", "Brightness", "Power Off", "< Back"]
 MENU_ITEMS = MENU_ITEMS_IDLE
 WIFI_ITEMS  = ["Last Network", "Scan Networks", "< Back"]
 
@@ -637,6 +637,49 @@ _portal_thread  = None
 _portal_stop    = None
 _oled_locked    = False   # when True, scroll thread stops drawing
 
+_cfg_portal_thread = None
+_cfg_portal_stop   = None
+
+def start_config_portal():
+    """Start AP + config_portal.py web server. Stays up until Stop AP."""
+    global _cfg_portal_thread, _cfg_portal_stop, ap_running, _oled_locked
+    import importlib.util
+    _oled_locked = True
+    subprocess.call(["systemctl", "stop", "lighttpd"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.5)
+    if not start_ap():
+        subprocess.call(["systemctl", "start", "lighttpd"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        show(bus, "AP Failed!", "")
+        time.sleep(2)
+        _oled_locked = False
+        return
+    ap_running = True
+    MENU_ITEMS[:] = MENU_ITEMS_AP
+    show(bus, "Config Portal", "OrangePi-SDR AP")
+    time.sleep(2)
+    show(bus, "Open browser:", "192.168.100.1")
+    _cfg_portal_stop = threading.Event()
+    spec = importlib.util.spec_from_file_location(
+        "config_portal", "/usr/local/bin/config_portal.py")
+    mod  = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    _cfg_portal_thread = threading.Thread(
+        target=mod.run, args=(_cfg_portal_stop,), daemon=True)
+    _cfg_portal_thread.start()
+    # Show status on OLED while running
+    def _monitor():
+        global _oled_locked
+        for i in range(9999):
+            if _cfg_portal_stop.is_set():
+                break
+            if i % 6 == 0:
+                show(bus, "Config Portal", "192.168.100.1")
+            time.sleep(0.5)
+        _oled_locked = False
+    threading.Thread(target=_monitor, daemon=True).start()
+
 def start_wifi_portal():
     """Start AP + wifi_portal.py web server, monitor for completion."""
     global _portal_thread, _portal_stop, ap_running, _oled_locked
@@ -1037,6 +1080,8 @@ while True:
                 show(bus, "Stopping AP...", "")
                 if _portal_stop:
                     _portal_stop.set()
+                if _cfg_portal_stop:
+                    _cfg_portal_stop.set()
                 stop_ap()
                 subprocess.call(["systemctl", "start", "lighttpd"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1049,6 +1094,9 @@ while True:
             elif choice == "WiFi Mode":
                 state = "idle"
                 threading.Thread(target=start_wifi_portal, daemon=True).start()
+            elif choice == "Config Portal":
+                state = "idle"
+                threading.Thread(target=start_config_portal, daemon=True).start()
             elif choice == "Brightness":
                 state = "brightness"
                 _show_brightness()

@@ -200,6 +200,8 @@ fi
 # ── 10. Copy scripts and service files ────────────────────
 echo "[10] Copying scripts..."
 sudo cp button_rtl.py      /usr/local/bin/button_rtl.py
+sudo cp wifi_portal.py     /usr/local/bin/wifi_portal.py
+sudo cp config_portal.py   /usr/local/bin/config_portal.py
 sudo cp start_ap.sh        /usr/local/bin/start_ap.sh
 sudo cp stop_ap.sh         /usr/local/bin/stop_ap.sh
 sudo chmod +x /usr/local/bin/start_ap.sh /usr/local/bin/stop_ap.sh
