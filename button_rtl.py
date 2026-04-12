@@ -666,7 +666,7 @@ def start_config_portal():
     mod  = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     _cfg_portal_thread = threading.Thread(
-        target=mod.run, args=(_cfg_portal_stop,), daemon=True)
+        target=mod.run, args=(_cfg_portal_stop,), kwargs={"port": 80}, daemon=True)
     _cfg_portal_thread.start()
     # Show status on OLED while running
     def _monitor():
@@ -1095,8 +1095,17 @@ while True:
                 state = "idle"
                 threading.Thread(target=start_wifi_portal, daemon=True).start()
             elif choice == "Config Portal":
-                state = "idle"
-                threading.Thread(target=start_config_portal, daemon=True).start()
+                ip = get_ip()
+                if ip and ip != "No IP":
+                    # Already on WiFi — portal runs permanently on 8083
+                    show(bus, "Config Portal:", f"{ip}:8083")
+                    time.sleep(5)
+                    state = "idle"
+                    refresh_idle()
+                else:
+                    # No WiFi — open AP with portal on port 80
+                    state = "idle"
+                    threading.Thread(target=start_config_portal, daemon=True).start()
             elif choice == "Brightness":
                 state = "brightness"
                 _show_brightness()

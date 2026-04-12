@@ -236,9 +236,10 @@ fi
 
 # ── 11. Systemd — enable / start ──────────────────────────
 echo "[11] Enabling systemd services..."
+sudo cp config_portal.service /lib/systemd/system/config_portal.service
 sudo systemctl daemon-reload
-sudo systemctl enable button_rtl
-sudo systemctl start button_rtl
+sudo systemctl enable button_rtl config_portal
+sudo systemctl start button_rtl config_portal
 
 if [[ "$ANS_NOAA" =~ ^[Yy] ]]; then
     sudo systemctl enable noaa_web

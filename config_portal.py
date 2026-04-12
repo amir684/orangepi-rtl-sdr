@@ -2,19 +2,22 @@
 """
 SDR Multi-Tool Config Portal
 Unified web interface to configure all SDR services.
-Port 80, accessible at 192.168.100.1 when hotspot is active.
-Connect to OrangePi-SDR AP → open browser → 192.168.100.1
+
+Normal mode (always-on service): port 8083, accessible at <device-IP>:8083
+AP mode (no WiFi): port 80, accessible at 192.168.100.1
 """
 
 import json
 import re
 import subprocess
+import sys
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
 
-PORT = 80
+# Port can be overridden: run(stop_event, port=80) or python config_portal.py 80
+DEFAULT_PORT = 8083
 
 # ── Config file paths ──────────────────────────────────────────────────────────
 AUTORX_CFG   = Path("/home/orangepi/radiosonde_auto_rx/auto_rx/station.cfg")
@@ -854,8 +857,8 @@ class Handler(BaseHTTPRequestHandler):
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run(stop_event):
-    server = HTTPServer(("0.0.0.0", PORT), Handler)
+def run(stop_event, port=DEFAULT_PORT):
+    server = HTTPServer(("0.0.0.0", port), Handler)
     server.timeout = 1
     while not stop_event.is_set():
         server.handle_request()
@@ -864,7 +867,8 @@ def run(stop_event):
 
 if __name__ == "__main__":
     import signal
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda s, f: stop.set())
     signal.signal(signal.SIGINT,  lambda s, f: stop.set())
-    run(stop)
+    run(stop, port)
