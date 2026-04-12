@@ -46,21 +46,28 @@ def save_cfg(cfg):
 
 def load_status():
     try:
-        return json.loads(STATUS_FILE.read_text())
+        d = json.loads(STATUS_FILE.read_text())
+        # Inject live RMS from shared file if available
+        try:
+            rms = int(Path("/tmp/sdr_recorder_rms").read_text().strip())
+            d["rms"] = rms
+        except Exception:
+            d["rms"] = 0
+        return d
     except Exception:
-        return {"state": "idle", "frequency": "—", "squelch": "—"}
+        return {"state": "idle", "frequency": "—", "squelch": "—", "rms": 0}
 
 
 def reload_recorder():
-    subprocess.call(["systemctl", "reload-or-restart", "sdr_recorder"],
+    subprocess.call(["sudo", "systemctl", "restart", "sdr_recorder"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def stop_recorder():
-    subprocess.call(["systemctl", "stop", "sdr_recorder"],
+    subprocess.call(["sudo", "systemctl", "stop", "sdr_recorder"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def start_recorder():
-    subprocess.call(["systemctl", "start", "sdr_recorder"],
+    subprocess.call(["sudo", "systemctl", "start", "sdr_recorder"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -200,8 +207,15 @@ audio{height:28px;width:100%;max-width:320px;filter:invert(1) hue-rotate(180deg)
     <input id="cfg-sildur" name="silence_dur" type="number" min="0.3" max="10" step="0.1">
   </div>
   <div class="field">
-    <label>VOX threshold (RMS 0-32768)</label>
-    <input id="cfg-vox" name="vox_threshold" type="number" min="50" max="10000">
+    <label>VOX threshold (RMS 0-32768) &nbsp;
+      <span style="color:#888;font-size:.85em">current noise: </span>
+      <span id="rms-val" style="color:#fa0;font-weight:bold">—</span>
+    </label>
+    <input id="cfg-vox" name="vox_threshold" type="number" min="50" max="32768">
+    <div style="margin-top:6px;height:8px;background:#1a1a1a;border-radius:4px;overflow:hidden">
+      <div id="rms-bar" style="height:100%;background:#fa0;width:0%;transition:width .2s;border-radius:4px"></div>
+    </div>
+    <div style="font-size:.72em;color:#555;margin-top:3px">Set threshold above noise floor to avoid false recordings</div>
   </div>
 </div>
 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -265,15 +279,28 @@ async function loadStatus() {
     const dot = document.getElementById('dot');
     const lbl = document.getElementById('status-lbl');
     dot.className = 'dot ' + st.state;
-    const stateText = {idle:'Idle', listening:'Listening…', recording:'Recording'};
+    const stateText = {idle:'Idle', listening:'Listening…', recording:'● REC'};
     lbl.innerHTML =
       `<b>${stateText[st.state] || st.state}</b> &nbsp;·&nbsp; ` +
       `Freq: <b>${st.frequency}</b> &nbsp;·&nbsp; ` +
       `Squelch: <b>${st.squelch}</b> &nbsp;·&nbsp; ` +
       `Mode: <b>${st.mode||'—'}</b>`;
     lbl.className = 'status-label ' + st.state;
+    // RMS meter
+    const rms = st.rms || 0;
+    const rmsEl = document.getElementById('rms-val');
+    const rmsBar = document.getElementById('rms-bar');
+    if (rmsEl) {
+      rmsEl.textContent = rms;
+      rmsEl.style.color = rms > parseInt(document.getElementById('cfg-vox').value||500) ? '#f44' : '#fa0';
+    }
+    if (rmsBar) {
+      const pct = Math.min(rms / 32768 * 100, 100);
+      rmsBar.style.width = pct + '%';
+      rmsBar.style.background = rms > parseInt(document.getElementById('cfg-vox').value||500) ? '#f44' : '#fa0';
+    }
   } catch(e) {}
-  setTimeout(loadStatus, 3000);
+  setTimeout(loadStatus, 1000);
 }
 
 async function loadRecordings() {

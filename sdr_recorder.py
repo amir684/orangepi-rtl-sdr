@@ -211,6 +211,12 @@ def record_loop():
                 rms = calc_rms(chunk)
                 now = time.time()
 
+                # Write live RMS for web UI meter (every chunk ~50ms)
+                try:
+                    Path("/tmp/sdr_recorder_rms").write_text(str(rms))
+                except Exception:
+                    pass
+
                 if rms >= vox_thr:
                     # ── Signal present ────────────────────
                     silence_since = None
