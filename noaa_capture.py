@@ -22,9 +22,6 @@ from pathlib import Path
 import ephem
 
 # ── Config ────────────────────────────────────────────────────────────────────
-LAT        = 32.0853    # Station latitude  (Tel Aviv default)
-LON        = 34.7818    # Station longitude
-ALT        = 30         # Station altitude (meters)
 FREQ = {
     "NOAA 15": "137.620M",
     "NOAA 18": "137.9125M",
@@ -38,7 +35,13 @@ SDR_MODE_FILE = Path("/tmp/sdr_mode")
 RTL_GAIN    = "40"       # RTL-SDR gain (dB), "0" for auto
 SAMPLE_RATE = "60000"
 
-DEFAULT_CFG = {"auto_capture": False, "min_elev": 15}
+DEFAULT_CFG = {
+    "auto_capture": False,
+    "min_elev":     15,
+    "lat":          32.0853,
+    "lon":          34.7818,
+    "alt":          30,
+}
 
 def load_config():
     try:
@@ -111,10 +114,11 @@ def next_pass(sat, observer, min_elev=15):
         return None
 
 def make_observer():
+    cfg = load_config()
     obs = ephem.Observer()
-    obs.lat  = str(LAT)
-    obs.lon  = str(LON)
-    obs.elev = ALT
+    obs.lat  = str(cfg["lat"])
+    obs.lon  = str(cfg["lon"])
+    obs.elev = float(cfg["alt"])
     obs.pressure = 0   # disable atmospheric refraction
     return obs
 

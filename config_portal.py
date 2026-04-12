@@ -106,10 +106,12 @@ def write_autorx(raw):
 
 
 def read_noaa():
+    defaults = {"auto_capture": False, "min_elev": 15,
+                "lat": 32.0853, "lon": 34.7818, "alt": 30}
     try:
-        return json.loads(NOAA_CFG.read_text())
+        return {**defaults, **json.loads(NOAA_CFG.read_text())}
     except Exception:
-        return {"auto_capture": False, "min_elev": 15}
+        return defaults
 
 
 def write_noaa(raw):
@@ -119,6 +121,12 @@ def write_noaa(raw):
             cfg["auto_capture"] = raw["auto_capture"] in (True, "True", "true", "1", 1)
         if "min_elev" in raw:
             cfg["min_elev"] = int(raw["min_elev"])
+        if "lat" in raw:
+            cfg["lat"] = float(raw["lat"])
+        if "lon" in raw:
+            cfg["lon"] = float(raw["lon"])
+        if "alt" in raw:
+            cfg["alt"] = float(raw["alt"])
         NOAA_CFG.write_text(json.dumps(cfg, indent=2))
         return True, []
     except Exception as e:
@@ -490,7 +498,25 @@ p.sub{color:#555;font-size:.8em;margin-top:2px}
 <!-- ── NOAA ─────────────────────────────────────────────── -->
 <div class="panel" id="tab-noaa">
   <div class="card">
-    <div class="card-title">NOAA APT Settings</div>
+    <div class="card-title">Station Location</div>
+    <div class="row2">
+      <div class="field">
+        <label>Latitude</label>
+        <input type="number" step="0.0001" id="noaa_lat" data-key="lat">
+      </div>
+      <div class="field">
+        <label>Longitude</label>
+        <input type="number" step="0.0001" id="noaa_lon" data-key="lon">
+      </div>
+    </div>
+    <div class="field">
+      <label>Altitude (m)</label>
+      <input type="number" id="noaa_alt" data-key="alt">
+      <div class="hint">Used to calculate satellite pass times over your location</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Capture Settings</div>
     <div class="toggle-row">
       <span>Auto Capture (schedule-based)</span>
       <label class="sw"><input type="checkbox" id="noaa_auto_capture"
