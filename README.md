@@ -545,6 +545,39 @@ To stop: Menu → **Stop AP** (reconnects to last WiFi).
 
 ---
 
+### Config Portal
+
+A unified web interface for configuring all SDR services — accessible from any device on the same network.
+
+**When connected to WiFi** — press **Config Portal** in the menu:
+- OLED shows `192.168.1.x:8083` for 5 seconds
+- Open that address in any browser
+
+**When no WiFi is available** — press **Config Portal**:
+- Pi opens the `OrangePi-SDR` hotspot
+- Connect your phone/laptop to the hotspot
+- Open `http://192.168.100.1` in a browser
+
+![Config Portal — AutoRX tab](images/config_portal_autorx.png)
+![Config Portal — System tab](images/config_portal_system.png)
+
+The portal has tabs for every service:
+
+| Tab | Settings |
+|-----|---------|
+| **AutoRX** | Callsign, Lat/Lon/Alt, Gain, PPM, SondeHub/APRS toggles |
+| **ADSB** | SDR Gain, PPM correction |
+| **NOAA** | Station location (Lat/Lon/Alt), Auto Capture, Min Elevation |
+| **Recorder** | Frequency, Mode, Gain, Squelch, VOX threshold |
+| **ACARS** | Gain, monitored frequencies |
+| **System** | Live status of all services + Start / Stop / Restart |
+
+Each tab has a **Save & Restart** button that writes the config and restarts the relevant service immediately.
+
+The portal also runs as a permanent background service on port `8083` — no need to do anything, it's always available when the Pi has a network connection.
+
+---
+
 ### WiFi Password Entry
 
 On-screen character picker for joining new networks:
