@@ -294,7 +294,7 @@ async function loadRecordings() {
       <td>
         <div class="actions">
           <audio src="/recordings/${encodeURIComponent(rec.name)}" controls preload="none"></audio>
-          <a href="/recordings/${encodeURIComponent(rec.name)}" download="${rec.name}">
+          <a href="/download/${encodeURIComponent(rec.name)}" download="${rec.name}">
             <button class="btn btn-sm btn-dl">⬇ Download</button>
           </a>
         </div>
@@ -328,9 +328,29 @@ setInterval(loadRecordings, 10000);
 """
 
 
+CHUNK = 65536  # 64 KB read chunks for streaming
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
+
+    def do_HEAD(self):
+        """Support HEAD requests (needed by browsers before audio playback)."""
+        p = urlparse(self.path)
+        if p.path.startswith("/recordings/"):
+            filename = Path(unquote(p.path[12:])).name
+            f = REC_DIR / filename
+            if f.exists() and f.suffix == ".wav":
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/wav")
+                self.send_header("Content-Length", f.stat().st_size)
+                self.send_header("Accept-Ranges", "bytes")
+                self.end_headers()
+            else:
+                self.send_error(404)
+        else:
+            self.send_error(404)
 
     def do_GET(self):
         p = urlparse(self.path)
@@ -345,7 +365,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/recordings":
             self.send_json(get_recordings())
         elif path.startswith("/recordings/"):
-            self.serve_audio(unquote(path[13:]))
+            self.serve_audio(unquote(path[12:]), download=False)
+        elif path.startswith("/download/"):
+            self.serve_audio(unquote(path[10:]), download=True)
         else:
             self.send_error(404)
 
@@ -402,20 +424,57 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def serve_audio(self, filename):
-        filename = Path(filename).name  # sanitize
+    def serve_audio(self, filename, download=False):
+        """Serve WAV with HTTP Range support for in-browser playback."""
+        filename = Path(filename).name  # sanitize path traversal
         f = REC_DIR / filename
         if not f.exists() or f.suffix != ".wav":
             self.send_error(404)
             return
-        data = f.read_bytes()
-        self.send_response(200)
+
+        file_size = f.stat().st_size
+        range_header = self.headers.get("Range")
+
+        # Parse Range header
+        start, end = 0, file_size - 1
+        if range_header:
+            try:
+                rng = range_header.strip().replace("bytes=", "")
+                s, e = rng.split("-")
+                start = int(s) if s else 0
+                end   = int(e) if e else file_size - 1
+            except Exception:
+                pass
+
+        end   = min(end, file_size - 1)
+        length = end - start + 1
+
+        status = 206 if range_header else 200
+        self.send_response(status)
         self.send_header("Content-Type", "audio/wav")
-        self.send_header("Content-Length", len(data))
-        self.send_header("Content-Disposition",
-                         f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", length)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        if download:
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="{filename}"')
+        else:
+            self.send_header("Content-Disposition",
+                             f'inline; filename="{filename}"')
         self.end_headers()
-        self.wfile.write(data)
+
+        try:
+            with open(f, "rb") as fh:
+                fh.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = fh.read(min(CHUNK, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
 
 if __name__ == "__main__":
