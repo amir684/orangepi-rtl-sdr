@@ -107,7 +107,7 @@ def write_autorx(raw):
 
 def read_noaa():
     defaults = {"auto_capture": False, "min_elev": 15,
-                "lat": 32.0853, "lon": 34.7818, "alt": 30}
+                "lat": 32.0853, "lon": 34.7818, "alt": 30, "gain": 49}
     try:
         return {**defaults, **json.loads(NOAA_CFG.read_text())}
     except Exception:
@@ -127,6 +127,8 @@ def write_noaa(raw):
             cfg["lon"] = float(raw["lon"])
         if "alt" in raw:
             cfg["alt"] = float(raw["alt"])
+        if "gain" in raw:
+            cfg["gain"] = int(raw["gain"])
         NOAA_CFG.write_text(json.dumps(cfg, indent=2))
         return True, []
     except Exception as e:
@@ -522,11 +524,19 @@ p.sub{color:#555;font-size:.8em;margin-top:2px}
       <label class="sw"><input type="checkbox" id="noaa_auto_capture"
              data-key="auto_capture"><span class="sl"></span></label>
     </div>
-    <div class="field" style="margin-top:14px">
-      <label>Minimum Elevation (°)</label>
-      <input type="number" id="noaa_min_elev" data-key="min_elev"
-             min="0" max="90" step="1">
-      <div class="hint">Ignore passes below this elevation (15° recommended)</div>
+    <div class="row2">
+      <div class="field" style="margin-top:14px">
+        <label>Minimum Elevation (°)</label>
+        <input type="number" id="noaa_min_elev" data-key="min_elev"
+               min="0" max="90" step="1">
+        <div class="hint">Ignore passes below this elevation (15° recommended)</div>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label>SDR Gain (dB)</label>
+        <input type="number" id="noaa_gain" data-key="gain"
+               min="0" max="50" step="1">
+        <div class="hint">49 = max, 0 = auto</div>
+      </div>
     </div>
   </div>
   <button class="btn btn-save" id="save-noaa"

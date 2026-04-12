@@ -41,6 +41,7 @@ DEFAULT_CFG = {
     "lat":          32.0853,
     "lon":          34.7818,
     "alt":          30,
+    "gain":         49,
 }
 
 def load_config():
@@ -155,7 +156,7 @@ def capture_pass(sat_name, freq, duration_sec):
             "-f", freq,
             "-M", "fm",
             "-s", SAMPLE_RATE,
-            "-g", RTL_GAIN,
+            "-g", str(load_config().get("gain", RTL_GAIN)),
             "-E", "deemp",
             "-"],
             stdout=subprocess.PIPE,
