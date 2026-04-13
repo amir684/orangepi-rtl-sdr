@@ -236,8 +236,15 @@ if [[ "$ANS_PAGER" =~ ^[Yy] ]]; then
     sudo mkdir -p /var/log/multimon_ng
 fi
 
-# ── 11. Systemd — enable / start ──────────────────────────
-echo "[11] Enabling systemd services..."
+# ── 11. Sudoers — web UI service control ─────────────────
+echo "[11] Installing sudoers rule for web UI..."
+sudo tee /etc/sudoers.d/sdr_webui > /dev/null << 'EOF'
+orangepi ALL=(ALL) NOPASSWD: /bin/systemctl start sdr_recorder, /bin/systemctl stop sdr_recorder, /bin/systemctl restart sdr_recorder, /bin/systemctl start noaa_capture, /bin/systemctl stop noaa_capture, /bin/systemctl restart noaa_capture
+EOF
+sudo chmod 0440 /etc/sudoers.d/sdr_webui
+
+# ── 12. Systemd — enable / start ──────────────────────────
+echo "[12] Enabling systemd services..."
 sudo cp config_portal.service /lib/systemd/system/config_portal.service
 sudo systemctl daemon-reload
 sudo systemctl enable button_rtl config_portal
