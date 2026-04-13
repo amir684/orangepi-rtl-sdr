@@ -1,0 +1,10 @@
+[Unit]
+Description=RTL-433 HTTP watchdog timer — check every 60s
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=60
+Unit=rtl_433_watchdog.service
+
+[Install]
+WantedBy=timers.target

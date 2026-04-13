@@ -8,8 +8,9 @@ ExecStart=/usr/bin/rtl_433 \
     -f 433.92M \
     -F json:/var/log/rtl_433/events.json \
     -F http:0.0.0.0:8433
-Restart=on-failure
+Restart=always
 RestartSec=5
+StartLimitIntervalSec=0
 
 [Install]
 WantedBy=multi-user.target

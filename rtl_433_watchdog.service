@@ -1,0 +1,13 @@
+[Unit]
+Description=RTL-433 HTTP watchdog — restart if web port is unresponsive
+After=rtl_433.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '\
+  if systemctl is-active --quiet rtl_433; then \
+    if ! curl -s --max-time 5 http://localhost:8433 > /dev/null 2>&1; then \
+      echo "rtl_433 HTTP unresponsive — restarting" | systemd-cat -t rtl_433_watchdog; \
+      systemctl restart rtl_433; \
+    fi; \
+  fi'

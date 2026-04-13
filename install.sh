@@ -130,10 +130,12 @@ if [[ "$ANS_433" =~ ^[Yy] ]]; then
 
     echo "[6] Installing rtl_433 systemd service..."
     sudo cp rtl_433.service /etc/systemd/system/rtl_433.service
+    sudo cp rtl_433_watchdog.service /etc/systemd/system/rtl_433_watchdog.service
+    sudo cp rtl_433_watchdog.timer   /etc/systemd/system/rtl_433_watchdog.timer
     sudo mkdir -p /var/log/rtl_433
     sudo systemctl daemon-reload
-    sudo systemctl disable rtl_433 2>/dev/null || true
-    sudo systemctl stop rtl_433 2>/dev/null || true
+    sudo systemctl disable rtl_433 rtl_433_watchdog.timer 2>/dev/null || true
+    sudo systemctl stop    rtl_433 rtl_433_watchdog.timer 2>/dev/null || true
     echo "[6] rtl_433 installed. HTTP feed at http://IP:8433"
 else
     echo "[6] Skipping rtl_433."

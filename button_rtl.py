@@ -295,7 +295,7 @@ def stop_all_sdr():
     subprocess.call(["pkill", "-f", "rtl_tcp"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     rtl_process = None
-    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "ais_catcher", "noaa_capture", "multimon_ng", "acarsdec", "sdr_recorder"]:
+    for svc in ["readsb", "tar1090", "auto-rx", "rtl_433", "rtl_433_watchdog.timer", "ais_catcher", "noaa_capture", "multimon_ng", "acarsdec", "sdr_recorder"]:
         subprocess.call(["systemctl", "stop", svc],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(0.5)
@@ -322,6 +322,7 @@ def start_sdr(mode):
         subprocess.call(["systemctl", "start", "auto-rx"])
     elif mode == "rtl433":
         subprocess.call(["systemctl", "start", "rtl_433"])
+        subprocess.call(["systemctl", "start", "rtl_433_watchdog.timer"])
     elif mode == "ais":
         subprocess.call(["systemctl", "start", "ais_catcher"])
     elif mode == "noaa":
