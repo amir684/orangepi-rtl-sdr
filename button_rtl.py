@@ -56,8 +56,7 @@ cfg_call_char_idx = 0
 # Scroll / idle-display state
 current_freq    = ""          # last frequency seen from rtl_tcp
 _scroll_offset  = 0
-_scroll_state   = "pause_start"   # pause_start | scrolling | pause_end
-_scroll_pause   = 30
+_scroll_r2_offset = 0
 _status_cache   = {"val": "", "mode": "", "ts": 0.0}
 
 AUTORX_TOGGLE_FIELDS = [
@@ -853,7 +852,7 @@ def _get_line2_status():
         _status_cache["ts"]   = now
     return _status_cache["val"]
 
-def _draw_idle_frame(bus_ref, scroll_px=0):
+def _draw_idle_frame(bus_ref, scroll_px=0, scroll_r2_px=0):
     """Draw one idle screen frame with scroll_px offset on line 1."""
     with display_lock:
         img = Image.new('1', (128, 32), 0)
@@ -882,7 +881,7 @@ def _draw_idle_frame(bus_ref, scroll_px=0):
         elif current_sdr_mode == "autorx":
             line2 = pfx + "AutoRX ON"
         elif current_sdr_mode == "rtl433":
-            line2 = pfx + "RTL-433 ON"
+            line2 = pfx + "RTL433"
         elif current_sdr_mode == "ais":
             line2 = pfx + "AIS ON"
         elif current_sdr_mode == "noaa":
@@ -899,33 +898,39 @@ def _draw_idle_frame(bus_ref, scroll_px=0):
         r2 = _get_line2_status()
         d.text((0, 17), line2, font=font, fill=1)
         if r2:
-            rw = int(d.textlength(r2, font=font))
-            d.text((127 - rw, 17), r2, font=font, fill=1)
+            line2_w = int(d.textlength(line2, font=font)) + 4  # gap between label and status
+            avail_r2 = 128 - line2_w
+            r2_w = int(d.textlength(r2, font=font))
+            if r2_w <= avail_r2:
+                # Fits — right-align, no scroll
+                d.text((128 - r2_w, 17), r2, font=font, fill=1)
+            else:
+                # Too wide — scroll within available space, clipped
+                sub = Image.new('1', (r2_w + avail_r2, 16), 0)
+                sd  = ImageDraw.Draw(sub)
+                sd.text((-scroll_r2_px, 1), r2, font=font, fill=1)
+                img.paste(sub.crop((0, 0, avail_r2, 16)), (line2_w, 16))
 
         display_image(bus_ref, img)
 
 def refresh_idle():
     """Reset scroll to start and draw immediately."""
-    global _scroll_offset, _scroll_state, _scroll_pause
-    _scroll_offset = 0
-    _scroll_state  = "pause_start"
-    _scroll_pause  = 30
-    _draw_idle_frame(bus, 0)
+    global _scroll_offset, _scroll_r2_offset
+    _scroll_offset    = 0
+    _scroll_r2_offset = 0
+    _draw_idle_frame(bus, 0, 0)
 
 def _idle_scroll_thread(bus_ref):
-    """Continuously update idle screen with marquee scroll on line 1."""
-    global _scroll_offset, _scroll_state, _scroll_pause
-    PAUSE = 30  # frames at each end (~2.4s at 12fps)
-
+    """Continuously update idle screen with marquee scroll on line 1 and line 2 status."""
+    global _scroll_offset, _scroll_r2_offset
     while True:
         if _oled_locked or state != "idle":
             time.sleep(0.2)
-            _scroll_offset = 0
-            _scroll_state  = "pause_start"
-            _scroll_pause  = PAUSE
+            _scroll_offset    = 0
+            _scroll_r2_offset = 0
             continue
 
-        # Measure how far to scroll
+        # ── Line 1 scroll measurement ──────────────────────
         addr   = _make_scroll_text()
         dummy  = Image.new('1', (1, 1), 0)
         dd     = ImageDraw.Draw(dummy)
@@ -933,31 +938,48 @@ def _idle_scroll_thread(bus_ref):
         avail  = 90          # pixels before temp
         max_off = max(0, full_w - avail)
 
-        _draw_idle_frame(bus_ref, _scroll_offset)
+        # ── Line 2 r2 scroll measurement ──────────────────
+        r2 = _get_line2_status()
+        if r2:
+            line2_label = ""  # placeholder — measure actual label width
+            # Build line2 label to measure it
+            pfx = "AP " if ap_running else ""
+            mode_labels = {
+                "rtltcp": pfx + (current_freq if (rtl_process and rtl_process.poll() is None and current_freq) else ("RTL:ON" if (rtl_process and rtl_process.poll() is None) else "RTL:OFF")),
+                "adsb":   pfx + "ADS-B ON",
+                "autorx": pfx + "AutoRX ON",
+                "rtl433": pfx + "RTL433",
+                "ais":    pfx + "AIS ON",
+                "noaa":   pfx + "NOAA APT",
+                "pager":  pfx + "Pager ON",
+                "acars":  pfx + "ACARS ON",
+                "scanner":pfx + "Scanner",
+            }
+            line2_label = mode_labels.get(current_sdr_mode, pfx + "SDR: OFF")
+            line2_w  = int(dd.textlength(line2_label, font=font)) + 4
+            avail_r2 = 128 - line2_w
+            r2_w     = int(dd.textlength(r2, font=font))
+            max_r2_off = max(0, r2_w - avail_r2)
+        else:
+            max_r2_off = 0
 
-        if max_off == 0:
-            time.sleep(0.5)   # no scroll needed — just keep refreshing temp
-            continue
+        _draw_idle_frame(bus_ref, _scroll_offset, _scroll_r2_offset)
 
-        # State machine
-        if _scroll_state == "pause_start":
-            _scroll_pause -= 1
-            if _scroll_pause <= 0:
-                _scroll_state = "scrolling"
-        elif _scroll_state == "scrolling":
+        # ── Line 1 scroll ──────────────────────────────────
+        if max_off > 0:
             _scroll_offset += 1
-            if _scroll_offset >= max_off:
-                _scroll_offset = max_off
-                _scroll_state  = "pause_end"
-                _scroll_pause  = PAUSE
-        elif _scroll_state == "pause_end":
-            _scroll_pause -= 1
-            if _scroll_pause <= 0:
+            if _scroll_offset > max_off:
                 _scroll_offset = 0
-                _scroll_state  = "pause_start"
-                _scroll_pause  = PAUSE
 
-        time.sleep(0.08)
+        # ── Line 2 r2 scroll ───────────────────────────────
+        if max_r2_off > 0:
+            _scroll_r2_offset += 1
+            if _scroll_r2_offset > max_r2_off:
+                _scroll_r2_offset = 0
+        else:
+            _scroll_r2_offset = 0
+
+        time.sleep(0.05)
 
 refresh_idle()
 
